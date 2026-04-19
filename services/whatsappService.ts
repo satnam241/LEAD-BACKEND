@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // services/whatsappService.ts
 
 import Twilio from "twilio";
@@ -103,3 +104,20 @@ export const sendWhatsAppUnified = async (
     throw new Error("WhatsApp send failed");
   }
 };
+=======
+export const sendWhatsApp = async (to: string, message: string) => {
+  try {
+    if (!to.startsWith("whatsapp:")) to = "whatsapp:" + to;
+
+    const res = await client.messages.create({
+      from: process.env.TWILIO_PHONE, 
+      to, 
+      body: message,
+    });
+
+    console.log("📱 WhatsApp sent:", res.sid);
+  } catch (err) {
+    console.error("WhatsApp error:", err);
+  }
+};
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c

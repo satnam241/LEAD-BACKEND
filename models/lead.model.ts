@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import mongoose, { Schema, Document, Query } from "mongoose";
 
 export interface ILead extends Document {
@@ -151,3 +152,32 @@ LeadSchema.index({ createdAt: -1 });
 LeadSchema.index({ phone: 1, email: 1 });
 
 export default mongoose.model<ILead>("Lead", LeadSchema);
+=======
+import mongoose, { Schema, Document } from "mongoose";
+
+export interface ILead extends Document {
+  name: string;
+  email: string;
+  phone: string;
+  message?: string;
+  status: "new" | "contacted" | "purchased" | "not_purchased";
+  createdAt: Date;
+}
+
+const LeadSchema: Schema = new Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    phone: { type: String, required: true },
+    message: { type: String },
+    status: {
+      type: String,
+      enum: ["new", "contacted", "purchased", "not_purchased"],
+      default: "new",
+    },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model<ILead>("Lead", LeadSchema);
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c

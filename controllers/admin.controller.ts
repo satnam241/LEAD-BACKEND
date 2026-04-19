@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Parser } from "json2csv";
+<<<<<<< HEAD
 import nodemailer from "nodemailer";
 import Admin from "../models/admin.model";
 import Lead from "../models/lead.model";
@@ -65,10 +66,17 @@ const FRONTEND_URL = process.env.FRONTEND_URL;
 // ==============================
 // ✅ Admin Signup (Only once)
 // ==============================
+=======
+import Admin from "../models/admin.model";
+import Lead from "../models/lead.model";
+
+const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
 
 
 export const adminSignup = async (req: Request, res: Response) => {
   try {
+<<<<<<< HEAD
     const { email, password, name } = req.body;
 
     // ✅ Validate name
@@ -89,16 +97,38 @@ export const adminSignup = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const admin = new Admin({ email, password: hashedPassword, name: name.trim() });
+=======
+    const { email, password } = req.body;
+
+    
+    const existingAdmin = await Admin.findOne();
+    if (existingAdmin) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Admin already exists. Signup disabled." });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Save admin
+    const admin = new Admin({ email, password: hashedPassword });
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
     await admin.save();
 
     res.status(201).json({ success: true, message: "Admin created successfully" });
   } catch (err) {
+<<<<<<< HEAD
     console.error("Admin signup error:", err);
+=======
+    console.error("Signup error:", err);
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
 
+<<<<<<< HEAD
 // ==============================
 // ✅ Admin Login
 // ==============================
@@ -194,11 +224,33 @@ export const changePasswordLoggedIn = async (req: Request, res: Response) => {
     res.json({ success: true, message: "Password changed successfully" });
   } catch (err) {
     console.error("Change password error:", err);
+=======
+export const adminLogin = async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    const admin = await Admin.findOne({ email });
+    if (!admin)
+      return res.status(400).json({ success: false, error: "Invalid credentials" });
+
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch)
+      return res.status(400).json({ success: false, error: "Invalid credentials" });
+
+    const token = jwt.sign({ id: admin._id, role: "admin" }, JWT_SECRET, {
+      expiresIn: "1d",
+    });
+
+    res.json({ success: true, token });
+  } catch (err) {
+    console.error("Login error:", err);
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
 
+<<<<<<< HEAD
 // ==============================
 // ✅ Get All Leads
 // ==============================
@@ -386,13 +438,29 @@ export const adminExportLeads = async (req: Request, res: Response) => {
 // ==============================
 // ✅ Update Lead
 // ==============================
+=======
+export const adminGetLeads = async (_req: Request, res: Response) => {
+  try {
+    const leads = await Lead.find().sort({ createdAt: -1 });
+    res.json({ success: true, leads });
+  } catch (err) {
+    console.error("Get leads error:", err);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
 export const adminUpdateLead = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
+<<<<<<< HEAD
     if (!status) return res.status(400).json({ success: false, error: "Status is required" });
 
+=======
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
     const lead = await Lead.findByIdAndUpdate(id, { status }, { new: true });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
 
@@ -403,6 +471,7 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
   }
 };
 
+<<<<<<< HEAD
 // ==============================
 // ✅ Delete Lead
 // ==============================
@@ -411,6 +480,14 @@ export const adminDeleteLead = async (req: Request, res: Response) => {
     const { id } = req.params;
     const lead = await Lead.findByIdAndDelete(id);
 
+=======
+
+export const adminDeleteLead = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const lead = await Lead.findByIdAndDelete(id);
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
 
     res.json({ success: true, message: "Lead deleted successfully" });
@@ -420,10 +497,13 @@ export const adminDeleteLead = async (req: Request, res: Response) => {
   }
 };
 
+<<<<<<< HEAD
 // ==============================
 // ✅ Daily Stats
 // ==============================
 // Existing function — UNTOUCHED
+=======
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
 export const adminDailyStats = async (_req: Request, res: Response) => {
   try {
     const stats = await Lead.aggregate([
@@ -441,11 +521,16 @@ export const adminDailyStats = async (_req: Request, res: Response) => {
     ]);
     res.json({ success: true, stats });
   } catch (err) {
+<<<<<<< HEAD
     console.error("Daily stats error:", err);
+=======
+    console.error("Stats error:", err);
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
+<<<<<<< HEAD
 // ✅ NEW — Stat cards ke liye real-time counts
 export const adminSummaryStats = async (_req: Request, res: Response) => {
   try {
@@ -725,3 +810,30 @@ export const getPendingReminderCount = async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, error: "Server error" });
   }
 };
+=======
+
+export const adminExportLeads = async (_req: Request, res: Response) => {
+  try {
+    const leads = await Lead.find().sort({ createdAt: -1 });
+
+    if (!leads || leads.length === 0) {
+      return res.status(404).json({ success: false, error: "No leads found" });
+    }
+
+    // Fields for CSV
+    const fields = ["name", "email", "phone", "status", "message", "createdAt"];
+    const opts = { fields };
+
+    const parser = new Parser(opts);
+    const csv = parser.parse(leads);
+
+    // Set headers for CSV download
+    res.header("Content-Type", "text/csv");
+    res.attachment("leads-export.csv");
+    return res.send(csv);
+  } catch (err) {
+    console.error("Export leads error:", err);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+>>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
