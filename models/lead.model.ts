@@ -22,7 +22,7 @@ export interface ILead extends Document {
   // reminder fields
   reminderCount?: number;
   lastReminderSent?: Date | null;
-  status?: "new" | "contacted" | "closed";
+  status?: "new" | "contacted" | "closed"| "lost";
 
   // 🆕 SOFT DELETE
   isDeleted?: boolean;
@@ -96,7 +96,7 @@ const LeadSchema = new Schema<ILead>(
 
     status: {
       type: String,
-      enum: ["new", "contacted", "closed"],
+      enum: ["new", "contacted", "closed","lost"],
       default: "new",
       index: true,
     },

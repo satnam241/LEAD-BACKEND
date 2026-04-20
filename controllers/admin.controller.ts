@@ -229,12 +229,18 @@ export const adminGetLeads = async (req: Request, res: Response) => {
     // Search — name, phone, email
     if (search) {
       const q = search.trim()
-      filter.$or = [
-        { fullName: { $regex: q, $options: 'i' } },
-        { phone:    { $regex: q, $options: 'i' } },
-        { email:    { $regex: q, $options: 'i' } },
+      filter.$and = [
+        { isDeleted: false },
+        {
+          $or: [
+            { fullName: { $regex: q, $options: 'i' } },
+            { phone:    { $regex: q, $options: 'i' } },
+            { email:    { $regex: q, $options: 'i' } },
+          ]
+        }
       ]
     }
+    
 
     // Date range — receivedAt
     if (dateFrom || dateTo) {
@@ -274,6 +280,7 @@ export const adminGetLeads = async (req: Request, res: Response) => {
       newLeadsCount:  byStatus['new']       ?? 0,
       contactedCount: byStatus['contacted'] ?? 0,
       convertedCount: byStatus['closed']    ?? 0,
+      lostCount:      byStatus['lost']      ?? 0,
       page:           pageNum,
       totalPages:     Math.ceil(totalLeads / limitNum),
     })
@@ -450,24 +457,21 @@ export const adminDailyStats = async (_req: Request, res: Response) => {
 export const adminSummaryStats = async (_req: Request, res: Response) => {
   try {
     const today = new Date();
-    const todayStart = new Date(today.setHours(0, 0, 0, 0));
-    const todayEnd   = new Date(today.setHours(23, 59, 59, 999));
+    const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+    const todayEnd   = new Date(new Date().setHours(23, 59, 59, 999));
 
     const [statusCounts, todayFollowups, overdueFollowups] = await Promise.all([
-      // Status-wise count
       Lead.aggregate([
         { $match: { isDeleted: false } },
         { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
 
-      // Today's active follow-ups
       Lead.countDocuments({
         isDeleted: false,
         "followUp.active": true,
         "followUp.date": { $gte: todayStart, $lte: todayEnd },
       }),
 
-      // Overdue follow-ups
       Lead.countDocuments({
         isDeleted: false,
         "followUp.active": true,
@@ -475,12 +479,21 @@ export const adminSummaryStats = async (_req: Request, res: Response) => {
       }),
     ]);
 
-    // ["new", "contacted", "closed"] → { New: 5, Contacted: 3, Closed: 1 }
-    const byStatus: Record<string, number> = {};
+    // ✅ FIX: default all statuses (including lost)
+    const byStatus: Record<string, number> = {
+      New: 0,
+      Contacted: 0,
+      Closed: 0,
+      Lost: 0, // 🔥 added
+    };
+
     let total = 0;
+
     statusCounts.forEach(({ _id, count }: { _id: string; count: number }) => {
       if (!_id) return;
+
       const key = _id.charAt(0).toUpperCase() + _id.slice(1).toLowerCase();
+
       byStatus[key] = count;
       total += count;
     });
