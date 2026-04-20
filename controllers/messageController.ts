@@ -8,21 +8,29 @@ export const sendMessageController = async (req: Request, res: Response) => {
     const { leadId } = req.params;
     const { messageType = "email", message, adminEmail } = req.body;
 
-    if (!leadId) {
-      return res.status(400).json({ error: "leadId is required" });
+    // 🔒 Validation
+    if (!leadId || typeof leadId !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Valid leadId is required",
+      });
     }
 
     const result = await sendMessageToLead({
-      leadId,
+      leadId, // ✅ FIXED (no lead._id)
       messageType,
       customMessage: message,
       adminEmail,
     });
 
-    return res.status(200).json(result);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
 
   } catch (error: any) {
     console.error("❌ Controller error:", error);
+
     return res.status(500).json({
       success: false,
       message: error.message || "Internal server error",

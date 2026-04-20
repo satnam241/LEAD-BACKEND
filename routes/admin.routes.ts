@@ -5,7 +5,6 @@ import {
   adminGetLeads,
   adminUpdateLead,
   adminDeleteLead,
-<<<<<<< HEAD
   adminSummaryStats,
   adminDailyStats,
   adminExportLeads,
@@ -55,23 +54,5 @@ router.put("/reminders/contacted/:id", adminAuth, markAsContacted);
 
 // 📊 Dashboard counter
 router.get("/reminders/count", adminAuth, getPendingReminderCount);
-=======
-  adminDailyStats,
-} from "../controllers/admin.controller";
-
-const router = Router();
-
-// Auth
-router.post("/signup", adminSignup); // only one-time
-router.post("/login", adminLogin);
-
-// Lead management
-router.get("/leads", adminGetLeads);
-router.put("/leads/:id", adminUpdateLead);
-router.delete("/leads/:id", adminDeleteLead);
-
-
-router.get("/stats/daily", adminDailyStats);
->>>>>>> 12ce192d2a5bd74df4854ba96063b1583eb3a95c
 
 export default router;
