@@ -79,7 +79,7 @@ const LeadSchema = new mongoose_1.Schema({
     lastReminderSent: { type: Date, default: null },
     status: {
         type: String,
-        enum: ["new", "contacted", "closed"],
+        enum: ["new", "contacted", "closed", "lost"],
         default: "new",
         index: true,
     },
