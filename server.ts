@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 
 import { connectDB } from "./database/DB";
-import { startAllJobs } from "./cron-jobs";
+//import { startAllJobs } from "./cron-jobs";
 
 import fbWebhook from "./routes/fbWebhook";
 import twilioWebhook from "./routes/whatsappWebhook";
@@ -39,7 +39,7 @@ app.use("/api/followup", followup);
 const startServer = async () => {
   await connectDB(); // DB ready hone do
 
-  startAllJobs(); // 🔥 cron yaha start karo
+ // startAllJobs(); // 🔥 cron yaha start karo
 
   const PORT = process.env.PORT || 4520;
 

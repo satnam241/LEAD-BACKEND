@@ -7,7 +7,7 @@ require("dotenv/config");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const DB_1 = require("./database/DB");
-const cron_jobs_1 = require("./cron-jobs");
+//import { startAllJobs } from "./cron-jobs";
 const fbWebhook_1 = __importDefault(require("./routes/fbWebhook"));
 const whatsappWebhook_1 = __importDefault(require("./routes/whatsappWebhook"));
 const leads_route_1 = __importDefault(require("./routes/leads.route"));
@@ -35,7 +35,7 @@ app.use("/api/followup", followup_routes_1.default);
 // ✅ PROPER SERVER START
 const startServer = async () => {
     await (0, DB_1.connectDB)(); // DB ready hone do
-    (0, cron_jobs_1.startAllJobs)(); // 🔥 cron yaha start karo
+    // startAllJobs(); // 🔥 cron yaha start karo
     const PORT = process.env.PORT || 4520;
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);
