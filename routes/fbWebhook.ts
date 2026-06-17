@@ -118,16 +118,33 @@ router.get("/facebook", (req: Request, res: Response) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  console.log("📩 Verification:", { mode, token });
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook verified");
-    return res.status(200).send(challenge);
+  // normal browser request
+  if (!mode && !token) {
+    return res
+      .status(200)
+      .send("🚀 Facebook webhook active");
   }
 
-  return res.status(403).send("❌ Verification failed");
-});
+  console.log("📩 Verification:", {
+    mode,
+    token,
+  });
 
+  if (
+    mode === "subscribe" &&
+    token === VERIFY_TOKEN
+  ) {
+    console.log("✅ Webhook verified");
+
+    return res
+      .status(200)
+      .send(challenge);
+  }
+
+  return res
+    .status(403)
+    .send("❌ Verification failed");
+});
 // 🔥 POST WEBHOOK
 router.post("/facebook", async (req: Request, res: Response) => {
   try {
@@ -140,32 +157,90 @@ router.post("/facebook", async (req: Request, res: Response) => {
         if (change?.field !== "leadgen") continue;
 
         const { leadgen_id, form_id } = change.value || {};
+
         if (!leadgen_id) continue;
 
         console.log("📥 New FB Lead:", leadgen_id);
 
         // ❌ Duplicate check
-        const already = await Lead.findOne({ "rawData.id": leadgen_id });
+        const already = await Lead.findOne({
+          "rawData.id": leadgen_id,
+        });
+
         if (already) {
           console.log("↩️ Duplicate skipped");
           continue;
         }
 
-        // 🔥 Fetch FB data
+        // ==========================================
+        // 🔥 FETCH FORM NAME
+        // ==========================================
+let formName = "";
+
+if (form_id) {
+    try {
+        const formUrl = `https://graph.facebook.com/${FB_VERSION}/${form_id}?fields=name&access_token=${PAGE_TOKEN}`;
+
+        const formData:any = await fetchWithRetry(
+            formUrl,
+            3,
+            800
+        );
+
+        let originalName =
+            formData?.name || "";
+
+        // remove Facebook generated junk
+        originalName = originalName
+            .replace(/'s form created.*/i, "")
+            .replace(/form created.*/i, "")
+            .replace(/Messenger\s*-\s*\d+/i, "Messenger")
+            .trim();
+
+        // first 3 words only
+        formName = originalName
+            .split(/\s+/)
+            .slice(0,3)
+            .join(" ");
+
+    } catch(err:any) {
+        console.error(
+            "❌ Form fetch failed:",
+            err.message
+        );
+    }
+}
+
+        // ==========================================
+        // 🔥 FETCH LEAD DATA
+        // ==========================================
+
         const url = `https://graph.facebook.com/${FB_VERSION}/${leadgen_id}?access_token=${PAGE_TOKEN}`;
 
         let leadData: any;
+
         try {
-          leadData = await fetchWithRetry(url, 3, 800);
+          leadData = await fetchWithRetry(
+            url,
+            3,
+            800
+          );
         } catch (err: any) {
-          console.error("❌ FB fetch failed:", err.message);
+          console.error(
+            "❌ FB fetch failed:",
+            err.message
+          );
           continue;
         }
 
         if (!leadData?.field_data) continue;
 
-        // 🔥 Convert fields
+        // ==========================================
+        // 🔥 CONVERT FIELDS
+        // ==========================================
+
         const fields: Record<string, any> = {};
+
         for (const f of leadData.field_data) {
           const key = (f.name || "")
             .trim()
@@ -175,7 +250,10 @@ router.post("/facebook", async (req: Request, res: Response) => {
           fields[key] = f.values?.[0] ?? "";
         }
 
-        // 🔥 MESSAGE EXTRACTION (MAIN FIX)
+        // ==========================================
+        // 🔥 MESSAGE EXTRACTION
+        // ==========================================
+
         const messageKeys = [
           "message",
           "description",
@@ -190,78 +268,151 @@ router.post("/facebook", async (req: Request, res: Response) => {
         for (const key of Object.keys(fields)) {
           const k = key.toLowerCase();
 
-          if (messageKeys.some((m) => k.includes(m))) {
+          if (
+            messageKeys.some((m) =>
+              k.includes(m)
+            )
+          ) {
             message = fields[key];
             break;
           }
         }
 
-        // 🔥 fallback
+        // fallback
         if (!message) {
-          const possible = Object.values(fields).find(
-            (v) => typeof v === "string" && v.length > 10
+          const possible = Object.values(
+            fields
+          ).find(
+            (v) =>
+              typeof v === "string" &&
+              v.length > 10
           );
-          message = possible || "No message provided";
+
+          message =
+            possible || "No message provided";
         }
 
-        // 🔥 Contact info
-        const email = fields.email || null;
-        const rawPhone = fields.phone_number || fields.phone || null;
-        const phone = rawPhone ? normalizePhone(rawPhone) : null;
+        // ==========================================
+        // 🔥 CONTACT INFO
+        // ==========================================
 
-        // 🔁 Check existing
+        const email = fields.email || null;
+
+        const rawPhone =
+          fields.phone_number ||
+          fields.phone ||
+          null;
+
+        const phone = rawPhone
+          ? normalizePhone(rawPhone)
+          : null;
+
+        // ==========================================
+        // 🔥 CHECK EXISTING LEAD
+        // ==========================================
+
         let existingLead = null;
-        if (phone) existingLead = await Lead.findOne({ phone });
+
+        if (phone)
+          existingLead = await Lead.findOne({
+            phone,
+          });
+
         if (!existingLead && email)
-          existingLead = await Lead.findOne({ email });
+          existingLead = await Lead.findOne({
+            email,
+          });
 
         if (existingLead) {
+
           // 🔁 UPDATE
+
           existingLead.extraFields = {
             ...existingLead.extraFields,
             ...fields,
           };
 
           existingLead.rawData = leadData;
+
           existingLead.source = "facebook";
-          existingLead.formId = form_id || existingLead.formId;
 
-          // ✅ IMPORTANT
-          existingLead.message = message ?? undefined;
+          existingLead.formId =
+            form_id ||
+            existingLead.formId;
 
-          if (!existingLead.phone && phone) existingLead.phone = phone;
-          if (!existingLead.email && email) existingLead.email = email;
+          existingLead.formName =
+            formName ||
+            existingLead.formName;
+
+          existingLead.message =
+            message ?? undefined;
+
+          if (
+            !existingLead.phone &&
+            phone
+          )
+            existingLead.phone = phone;
+
+          if (
+            !existingLead.email &&
+            email
+          )
+            existingLead.email = email;
 
           await existingLead.save();
 
-          console.log("♻️ Updated lead:", existingLead._id);
-        } else {
-          // 🆕 CREATE
-          const newLead = await Lead.create({
-            fullName: fields.full_name || fields.name || "Unknown",
-            email,
-            phone,
-            phoneVerified:
-              fields.phone_number_verified === "true",
+          console.log(
+            "♻️ Updated lead:",
+            existingLead._id
+          );
 
-            
+        } else {
+
+          // 🆕 CREATE
+
+          const newLead = await Lead.create({
+            fullName:
+              fields.full_name ||
+              fields.name ||
+              "Unknown",
+
+            email,
+
+            phone,
+
+            phoneVerified:
+              fields.phone_number_verified ===
+              "true",
+
             message,
 
             source: "facebook",
+
             formId: form_id,
+
+            formName: formName,
+
             extraFields: fields,
+
             rawData: leadData,
 
             status: "new",
+
             receivedAt: new Date(),
           });
 
-          console.log("🆕 New lead saved:", newLead._id);
+          console.log(
+            "🆕 New lead saved:",
+            newLead._id
+          );
         }
       }
     }
   } catch (err: any) {
-    console.error("❌ Webhook error:", err.message);
+    console.error(
+      "❌ Webhook error:",
+      err.message
+    );
   }
 });
 

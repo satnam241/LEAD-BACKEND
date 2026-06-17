@@ -14,6 +14,7 @@ import messageRoutes from "./routes/message.routes";
 import debugRoute from "./routes/debug.route";
 import activityRoutes from "./routes/activity.routes";
 import followup from "./routes/followup.routes";
+import googleRoutes from "./routes/google.routes";
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/debug", debugRoute);
 app.use("/api/activity", activityRoutes);
 app.use("/api/followup", followup);
+app.use("/api/google",googleRoutes);
 
 // ✅ PROPER SERVER START
 const startServer = async () => {

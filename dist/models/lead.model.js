@@ -165,6 +165,7 @@ const LeadSchema = new mongoose_1.Schema({
     phoneVerified: { type: Boolean, default: false },
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
+    formName: { type: String, default: null }, // ✅ ADDED — yahi missing tha
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
@@ -199,6 +200,7 @@ const LeadSchema = new mongoose_1.Schema({
         acknowledgedAt: { type: Date, default: null },
         rescheduledAt: { type: Date, default: null },
         resolvedAt: { type: Date, default: null },
+        googleEventId: { type: String, default: null },
     },
 }, { timestamps: true });
 LeadSchema.pre(/^find/, function (next) {

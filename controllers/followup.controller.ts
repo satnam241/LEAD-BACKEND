@@ -239,6 +239,11 @@
 import { Request, Response } from "express";
 import Lead from "../models/lead.model";
 import FollowUpLog from "../models/followupLog.model";
+import Admin from "../models/admin.model";
+import { createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent }
+   from "../services/googleCalendar.service";
 import mongoose from "mongoose";
 
 // 🔥 Better recurrence handling
@@ -293,7 +298,6 @@ export const scheduleFollowUp = async (req: Request, res: Response) => {
       message: message || null,
       whatsappOptIn: !!whatsappOptIn,
       active: true,
-      // 🆕 reset overdue tracking on reschedule
       overdueStatus: "pending",
       acknowledgedAt: null,
       rescheduledAt: null,
@@ -302,45 +306,107 @@ export const scheduleFollowUp = async (req: Request, res: Response) => {
 
     await lead.save();
 
+    // ✅ Google Calendar Sync
+    try {
+      const admin = await Admin.findById((req as any).adminId);
+      if (admin?.googleCalendar?.refreshToken) {
+        const event = await createCalendarEvent(
+          admin.googleCalendar.refreshToken,
+          lead,
+        );
+        if (event && event.id && lead.followUp) {
+          (lead.followUp as any).googleEventId = event.id;
+          await lead.save();
+        }
+      }
+    } catch (err) {
+      console.error("Google Calendar Error:", err);
+    }
+
+    // ✅ Fresh data DB se lo taaki googleEventId included ho
+    const updatedLead = await Lead.findById(id);
+
     return res.json({
       success: true,
       message: "Follow-up scheduled successfully",
-      data: lead.followUp,
+      data: updatedLead?.followUp,
     });
+
   } catch (err) {
     console.error("Schedule follow-up error:", err);
     return res.status(500).json({ success: false, error: "Server error" });
   }
 };
-
 // ✅ Cancel Follow-up
 export const cancelFollowUp = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
     const lead = await Lead.findById(id);
+
     if (!lead) {
-      return res.status(404).json({ success: false, error: "Lead not found" });
+      return res.status(404).json({
+        success: false,
+
+        error: "Lead not found",
+      });
     }
 
+    // ✅ Delete calendar event
+    try {
+      const admin = await Admin.findById((req as any).adminId);
+
+      if (lead.followUp?.googleEventId && admin?.googleCalendar?.refreshToken) {
+        await deleteCalendarEvent(
+          admin.googleCalendar.refreshToken,
+
+          lead.followUp.googleEventId,
+        );
+
+        console.log("CALENDAR DELETED");
+      }
+    } catch (err) {
+      console.log("DELETE ERROR", err);
+    }
+
+    // existing reset
     lead.followUp = {
       date: null,
+
       recurrence: null,
+
       message: null,
+
       whatsappOptIn: false,
+
       active: false,
+
       overdueStatus: "pending",
+
       acknowledgedAt: null,
+
       rescheduledAt: null,
+
       resolvedAt: null,
+
+      googleEventId: null,
     };
 
     await lead.save();
 
-    return res.json({ success: true, message: "Follow-up cancelled" });
+    return res.json({
+      success: true,
+
+      message: "Follow-up cancelled",
+    });
   } catch (err) {
-    console.error("Cancel follow-up error:", err);
-    return res.status(500).json({ success: false, error: "Server error" });
+    console.error("Cancel error:", err);
+
+    return res.status(500).json({
+      success: false,
+
+      error: "Server error",
+    });
   }
 };
 
@@ -543,39 +609,80 @@ export const resolveFollowUp = async (req: Request, res: Response) => {
 export const rescheduleFollowUp = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+
     const { newDate } = req.body;
 
-    // Default: kal 10 baje
+    // default tomorrow
     const tomorrow = new Date();
+
     tomorrow.setDate(tomorrow.getDate() + 1);
+
     tomorrow.setHours(10, 0, 0, 0);
 
     const scheduledDate = newDate ? new Date(newDate) : tomorrow;
 
     const lead = await Lead.findByIdAndUpdate(
       id,
+
       {
         $set: {
-          "followUp.date":          scheduledDate,
-          "followUp.active":        true,
+          "followUp.date": scheduledDate,
+
+          "followUp.active": true,
+
           "followUp.overdueStatus": "rescheduled",
+
           "followUp.rescheduledAt": new Date(),
         },
       },
-      { new: true }
+
+      {
+        new: true,
+      },
     );
 
-    if (!lead)
-      return res.status(404).json({ success: false, error: "Lead not found" });
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+
+        error: "Lead not found",
+      });
+    }
+
+    // ✅ Calendar Update
+    try {
+      const admin = await Admin.findById((req as any).adminId);
+
+      if (lead.followUp?.googleEventId && admin?.googleCalendar?.refreshToken) {
+        await updateCalendarEvent(
+          admin.googleCalendar.refreshToken,
+
+          lead.followUp.googleEventId,
+
+          lead,
+        );
+
+        console.log("CALENDAR UPDATED");
+      }
+    } catch (err) {
+      console.log("CALENDAR UPDATE ERROR", err);
+    }
 
     return res.json({
       success: true,
+
       message: `Rescheduled to ${scheduledDate.toLocaleDateString("en-IN")}`,
+
       data: lead.followUp,
     });
   } catch (err) {
     console.error("Reschedule error:", err);
-    return res.status(500).json({ success: false, error: "Server error" });
+
+    return res.status(500).json({
+      success: false,
+
+      error: "Server error",
+    });
   }
 };
 

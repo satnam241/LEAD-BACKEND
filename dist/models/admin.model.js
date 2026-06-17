@@ -35,9 +35,48 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const AdminSchema = new mongoose_1.Schema({
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: false },
-    password: { type: String, required: true },
-}, { timestamps: true });
+    name: {
+        type: String,
+        required: true,
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: false,
+    },
+    password: {
+        type: String,
+        required: true,
+    },
+    // ✅ Google Calendar
+    googleCalendar: {
+        accessToken: {
+            type: String,
+            default: null,
+        },
+        refreshToken: {
+            type: String,
+            default: null,
+        },
+        expiryDate: {
+            type: Number,
+            default: null,
+        },
+        isConnected: {
+            type: Boolean,
+            default: false,
+        },
+        lastSyncAt: {
+            type: Date,
+            default: null,
+        },
+        connectedEmail: {
+            type: String,
+            default: null,
+        },
+    },
+}, {
+    timestamps: true,
+});
 exports.default = mongoose_1.default.model("Admin", AdminSchema);
 //# sourceMappingURL=admin.model.js.map

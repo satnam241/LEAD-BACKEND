@@ -1,17 +1,9 @@
 "use strict";
-// import { Request, Response } from "express";
-// import bcrypt from "bcryptjs";
-// import jwt from "jsonwebtoken";
-// import { Parser } from "json2csv";
-// import nodemailer from "nodemailer";
-// import Admin from "../models/admin.model";
-// import Lead from "../models/lead.model";
-// import ExcelJS from 'exceljs'
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPendingReminderCount = exports.markAsContacted = exports.getReminderLeads = exports.adminGetProfile = exports.importLeadsController = exports.adminSummaryStats = exports.adminDailyStats = exports.adminDeleteLead = exports.adminUpdateLead = exports.adminExportLeads = exports.adminGetLeads = exports.changePasswordLoggedIn = exports.forgotPassword = exports.adminLogin = exports.adminSignup = void 0;
+exports.getNotifications = exports.adminAdvancedMonthlyReport = exports.getPendingReminderCount = exports.markAsContacted = exports.getReminderLeads = exports.adminGetProfile = exports.importLeadsController = exports.adminDailyStats = exports.adminDeleteLead = exports.adminUpdateLead = exports.adminExportLeads = exports.adminGetLeads = exports.changePasswordLoggedIn = exports.forgotPassword = exports.adminLogin = exports.adminSignup = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const json2csv_1 = require("json2csv");
@@ -343,60 +335,6 @@ const adminDailyStats = async (_req, res) => {
     }
 };
 exports.adminDailyStats = adminDailyStats;
-// ── Summary Stats ─────────────────────────────────────────────────────────────
-const adminSummaryStats = async (_req, res) => {
-    try {
-        const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
-        const todayEnd = new Date(new Date().setHours(23, 59, 59, 999));
-        const [statusCounts, todayFollowups, overdueFollowups] = await Promise.all([
-            lead_model_1.default.aggregate([
-                { $match: { isDeleted: false } },
-                { $group: { _id: "$status", count: { $sum: 1 } } },
-            ]),
-            lead_model_1.default.countDocuments({
-                isDeleted: false,
-                "followUp.active": true,
-                "followUp.date": { $gte: todayStart, $lte: todayEnd },
-            }),
-            lead_model_1.default.countDocuments({
-                isDeleted: false,
-                "followUp.active": true,
-                "followUp.date": { $lt: todayStart },
-                "followUp.overdueStatus": { $ne: "resolved" }, // ✅ resolved hide karo
-            }),
-        ]);
-        // ✅ FIX: Sabhi statuses include karo — Negotiation + Visitor bhi
-        const byStatus = {
-            New: 0,
-            Contacted: 0,
-            Closed: 0,
-            Lost: 0,
-            Negotiation: 0, // 🆕
-            Visitor: 0, // 🆕
-        };
-        let total = 0;
-        statusCounts.forEach(({ _id, count }) => {
-            if (!_id)
-                return;
-            // 'new' → 'New', 'negotiation' → 'Negotiation', 'visitor' → 'Visitor'
-            const key = _id.charAt(0).toUpperCase() + _id.slice(1).toLowerCase();
-            byStatus[key] = count;
-            total += count;
-        });
-        res.json({
-            success: true,
-            total,
-            byStatus,
-            todayFollowups,
-            overdueFollowups,
-        });
-    }
-    catch (err) {
-        console.error("Summary stats error:", err);
-        res.status(500).json({ success: false, error: "Server error" });
-    }
-};
-exports.adminSummaryStats = adminSummaryStats;
 // ── Import Leads ──────────────────────────────────────────────────────────────
 const importLeadsController = async (req, res) => {
     try {
@@ -446,13 +384,21 @@ const importLeadsController = async (req, res) => {
     }
 };
 exports.importLeadsController = importLeadsController;
-// ── Admin Profile ─────────────────────────────────────────────────────────────
 const adminGetProfile = async (req, res) => {
     try {
         const admin = await admin_model_1.default.findOne().select("-password");
         if (!admin)
             return res.status(404).json({ success: false, error: "Admin not found" });
-        res.json({ _id: admin._id, name: admin.name || "" });
+        res.json({
+            _id: admin._id,
+            name: admin.name || "",
+            email: admin.email || "",
+            // ✅ Google Calendar status frontend ko bhejna zaroori hai
+            googleCalendar: {
+                isConnected: !!(admin.googleCalendar?.refreshToken),
+                refreshToken: admin.googleCalendar?.refreshToken ? "EXISTS" : null, // token expose mat karo
+            },
+        });
     }
     catch (err) {
         console.error("Get admin profile error:", err);
@@ -503,4 +449,257 @@ const getPendingReminderCount = async (req, res) => {
     }
 };
 exports.getPendingReminderCount = getPendingReminderCount;
+const adminAdvancedMonthlyReport = async (req, res) => {
+    try {
+        const month = Number(req.query.month);
+        const year = Number(req.query.year);
+        if (!month || !year) {
+            return res.status(400).json({ success: false, error: 'month and year are required' });
+        }
+        // ── DATE RANGES ───────────────────────────────────────────────
+        const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+        const prevStartDate = new Date(year, month - 2, 1, 0, 0, 0, 0);
+        const prevEndDate = new Date(year, month - 1, 0, 23, 59, 59, 999);
+        // ── QUERIES ───────────────────────────────────────────────────
+        // Current month total
+        const totalLeadsPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+            createdAt: { $gte: startDate, $lte: endDate },
+        });
+        // Previous month total
+        const previousMonthLeadsPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+            createdAt: { $gte: prevStartDate, $lte: prevEndDate },
+        });
+        // Current month status breakdown
+        const statusCountsPromise = lead_model_1.default.aggregate([
+            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]);
+        // ✅ NEW — Previous month status breakdown (for ring chart comparison)
+        const prevStatusCountsPromise = lead_model_1.default.aggregate([
+            { $match: { isDeleted: false, createdAt: { $gte: prevStartDate, $lte: prevEndDate } } },
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]);
+        // Source wise
+        const sourceWisePromise = lead_model_1.default.aggregate([
+            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $group: { _id: '$source', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+        ]);
+        // Daily growth
+        const dailyGrowthPromise = lead_model_1.default.aggregate([
+            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $group: { _id: { day: { $dayOfMonth: '$createdAt' } }, count: { $sum: 1 } } },
+            { $sort: { '_id.day': 1 } },
+        ]);
+        // Follow-up completion
+        const followupCompletionPromise = lead_model_1.default.aggregate([
+            {
+                $match: {
+                    isDeleted: false,
+                    'followUp.active': true,
+                    createdAt: { $gte: startDate, $lte: endDate },
+                },
+            },
+            { $group: { _id: '$followUp.overdueStatus', count: { $sum: 1 } } },
+        ]);
+        // Lead temperature
+        const leadTemperaturePromise = lead_model_1.default.aggregate([
+            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $group: { _id: '$leadTemperature', count: { $sum: 1 } } },
+        ]);
+        // ── EXECUTE ALL ───────────────────────────────────────────────
+        const [totalLeads, previousMonthLeads, statusCounts, prevStatusCounts, // ✅ NEW
+        sourceWise, dailyGrowth, followupCompletion, leadTemperature,] = await Promise.all([
+            totalLeadsPromise,
+            previousMonthLeadsPromise,
+            statusCountsPromise,
+            prevStatusCountsPromise, // ✅ NEW
+            sourceWisePromise,
+            dailyGrowthPromise,
+            followupCompletionPromise,
+            leadTemperaturePromise,
+        ]);
+        // ── GROWTH % ──────────────────────────────────────────────────
+        const growthPercentage = previousMonthLeads > 0
+            ? ((totalLeads - previousMonthLeads) / previousMonthLeads) * 100
+            : 0;
+        // ── STATUS FORMAT HELPER ──────────────────────────────────────
+        const normalizeStatus = (raw) => {
+            const base = {
+                New: 0, Contacted: 0, Interested: 0,
+                Negotiation: 0, Visitor: 0, Closed: 0, Lost: 0,
+            };
+            raw.forEach(({ _id, count }) => {
+                if (!_id)
+                    return;
+                const key = _id.charAt(0).toUpperCase() + _id.slice(1).toLowerCase();
+                base[key] = count;
+            });
+            return base;
+        };
+        const byStatus = normalizeStatus(statusCounts);
+        const prevByStatus = normalizeStatus(prevStatusCounts); // ✅ NEW
+        // ── FOLLOW-UP STATS ───────────────────────────────────────────
+        const followupStats = { pending: 0, overdue: 0, resolved: 0 };
+        let totalFollowups = 0;
+        followupCompletion.forEach(({ _id, count }) => {
+            if (!_id)
+                return;
+            followupStats[_id] = count;
+            totalFollowups += count;
+        });
+        const completionRate = totalFollowups > 0
+            ? ((followupStats.resolved / totalFollowups) * 100).toFixed(2)
+            : 0;
+        // ── TEMPERATURE STATS ─────────────────────────────────────────
+        const leadTemperatureStats = { hot: 0, warm: 0, cold: 0 };
+        leadTemperature.forEach(({ _id, count }) => {
+            if (!_id)
+                return;
+            leadTemperatureStats[_id] = count;
+        });
+        // ── RESPONSE ──────────────────────────────────────────────────
+        return res.json({
+            success: true,
+            filters: { month, year },
+            analytics: {
+                // Current month
+                totalLeads,
+                byStatus,
+                // ✅ Previous month — used by ring chart comparison
+                previousMonthLeads,
+                prevByStatus,
+                // Growth
+                growthPercentage,
+                // Charts
+                sourceWise: sourceWise.map(item => ({
+                    source: item._id || 'Unknown',
+                    count: item.count,
+                })),
+                dailyGrowth: dailyGrowth.map(item => ({
+                    day: item._id.day,
+                    count: item.count,
+                })),
+                // Follow-ups
+                followupStats,
+                followupCompletionRate: `${completionRate}%`,
+                // Temperature
+                leadTemperatureStats,
+            },
+        });
+    }
+    catch (err) {
+        console.error('Advanced report error:', err);
+        return res.status(500).json({ success: false, error: 'Server error' });
+    }
+};
+exports.adminAdvancedMonthlyReport = adminAdvancedMonthlyReport;
+const getNotifications = async (req, res) => {
+    try {
+        const now = new Date();
+        // ── Time boundaries ───────────────────────────────────────
+        const in30min = new Date(now.getTime() + 30 * 60 * 1000);
+        const in1day = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const in2days = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+        // ── Fetch all relevant leads in one query ─────────────────
+        const leads = await lead_model_1.default.find({
+            isDeleted: false,
+            "followUp.active": true,
+            "followUp.date": { $ne: null },
+            "followUp.overdueStatus": { $ne: "resolved" },
+        })
+            .select("fullName phone email followUp status")
+            .lean();
+        const notifications = [];
+        for (const lead of leads) {
+            const followDate = lead.followUp?.date ? new Date(lead.followUp.date) : null;
+            if (!followDate)
+                continue;
+            const diffMs = followDate.getTime() - now.getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHrs = Math.floor(diffMins / 60);
+            const diffDays = Math.floor(diffHrs / 24);
+            const leadId = String(lead._id);
+            const leadName = lead.fullName ?? "Unknown";
+            const phone = lead.phone ?? null;
+            // ── OVERDUE ──────────────────────────────────────────────
+            if (diffMs < 0) {
+                const overdueMs = Math.abs(diffMs);
+                const overdueMins = Math.floor(overdueMs / 60000);
+                const overdueHrs = Math.floor(overdueMins / 60);
+                const overdueDays = Math.floor(overdueHrs / 24);
+                const overdueLabel = overdueDays > 0 ? `${overdueDays}d overdue` :
+                    overdueHrs > 0 ? `${overdueHrs}h overdue` :
+                        `${overdueMins}m overdue`;
+                notifications.push({
+                    id: `overdue-${leadId}`,
+                    leadId,
+                    leadName,
+                    phone,
+                    message: `Follow-up overdue — ${overdueLabel}`,
+                    type: "overdue",
+                    priority: "critical",
+                    followUpDate: followDate.toISOString(),
+                    overdueLabel,
+                });
+            }
+            // ── UPCOMING in 30 mins ───────────────────────────────────
+            else if (diffMs <= 30 * 60 * 1000) {
+                notifications.push({
+                    id: `30min-${leadId}`,
+                    leadId,
+                    leadName,
+                    phone,
+                    message: `Follow-up in ${diffMins} min`,
+                    type: "upcoming_30min",
+                    priority: "high",
+                    followUpDate: followDate.toISOString(),
+                });
+            }
+            // ── UPCOMING today (30min - 24hr) ─────────────────────────
+            else if (diffMs <= 24 * 60 * 60 * 1000) {
+                const label = diffHrs > 0 ? `${diffHrs}h ${diffMins % 60}m` : `${diffMins}m`;
+                notifications.push({
+                    id: `today-${leadId}`,
+                    leadId,
+                    leadName,
+                    phone,
+                    message: `Follow-up due in ${label}`,
+                    type: "due_today",
+                    priority: "medium",
+                    followUpDate: followDate.toISOString(),
+                });
+            }
+            // ── UPCOMING tomorrow (24hr - 48hr) ──────────────────────
+            else if (diffMs <= 48 * 60 * 60 * 1000) {
+                notifications.push({
+                    id: `1day-${leadId}`,
+                    leadId,
+                    leadName,
+                    phone,
+                    message: `Follow-up tomorrow`,
+                    type: "upcoming_1day",
+                    priority: "low",
+                    followUpDate: followDate.toISOString(),
+                });
+            }
+        }
+        // ── Sort: critical first ───────────────────────────────────
+        const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+        notifications.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
+        return res.json({
+            success: true,
+            count: notifications.length,
+            data: notifications,
+        });
+    }
+    catch (err) {
+        console.error("Notifications error:", err);
+        return res.status(500).json({ success: false, error: "Server error" });
+    }
+};
+exports.getNotifications = getNotifications;
 //# sourceMappingURL=admin.controller.js.map

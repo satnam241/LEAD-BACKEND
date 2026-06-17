@@ -31,7 +31,6 @@ import {
   getUpcomingFollowUps,
   getDueFollowUps,
   getOverdueFollowUps,
-  // 🆕 new actions
   acknowledgeFollowUp,
   resolveFollowUp,
   rescheduleFollowUp,

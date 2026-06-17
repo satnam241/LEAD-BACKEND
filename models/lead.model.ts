@@ -152,7 +152,6 @@
 
 // export default mongoose.model<ILead>("Lead", LeadSchema);
 
-
 import mongoose, { Schema, Document, Query } from "mongoose";
 
 export interface ILead extends Document {
@@ -162,6 +161,7 @@ export interface ILead extends Document {
   phoneVerified?: boolean;
   source?: string;
   formId?: string | null;
+  formName?: string | null;          // ✅ ADDED — fbWebhook.ts ke liye
   whenAreYouPlanningToPurchase?: string | null;
   whatIsYourBudget?: string | null;
   message?: string;
@@ -185,6 +185,7 @@ export interface ILead extends Document {
     acknowledgedAt?: Date | null;
     rescheduledAt?: Date | null;
     resolvedAt?: Date | null;
+    googleEventId?: string | null;   // ✅ ADDED — schema mein tha, interface mein nahi
   };
 }
 
@@ -196,6 +197,7 @@ const LeadSchema = new Schema<ILead>(
     phoneVerified: { type: Boolean, default: false },
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
+    formName: { type: String, default: null },   // ✅ ADDED — yahi missing tha
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
@@ -230,6 +232,7 @@ const LeadSchema = new Schema<ILead>(
       acknowledgedAt: { type: Date, default: null },
       rescheduledAt:  { type: Date, default: null },
       resolvedAt:     { type: Date, default: null },
+      googleEventId:  { type: String, default: null },
     },
   },
   { timestamps: true }
