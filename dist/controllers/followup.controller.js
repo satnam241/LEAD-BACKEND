@@ -2,6 +2,39 @@
 // import { Request, Response } from "express";
 // import Lead from "../models/lead.model";
 // //import FollowUpLog from "../models/followUpLog.model";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -12,7 +45,8 @@ const followupLog_model_1 = __importDefault(require("../models/followupLog.model
 const admin_model_1 = __importDefault(require("../models/admin.model"));
 const googleCalendar_service_1 = require("../services/googleCalendar.service");
 const mongoose_1 = __importDefault(require("mongoose"));
-// 🔥 Better recurrence handling
+// import { Request, Response } from "express";
+// import Lead from "../models/lead.model";
 const computeNextDate = (recurrence, from) => {
     const base = from ? new Date(from) : new Date();
     switch (recurrence) {
@@ -25,16 +59,15 @@ const computeNextDate = (recurrence, from) => {
         case "weekly":
             base.setDate(base.getDate() + 7);
             break;
-        default:
-            break;
     }
     return base;
 };
-// ✅ Schedule Follow-up
+// ✅ FIX: scheduleFollowUp — kisi bhi lead pe kaam kare chahe status kuch bhi ho
 const scheduleFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
         const { recurrence, date, message, whatsappOptIn } = req.body;
+        // ✅ findById use karo — pre-find hook skip karta hai status check
         const lead = await lead_model_1.default.findById(id);
         if (!lead) {
             return res.status(404).json({ success: false, error: "Lead not found" });
@@ -45,45 +78,46 @@ const scheduleFollowUp = async (req, res) => {
                 error: "Either date or recurrence is required",
             });
         }
-        let followDate;
-        if (date) {
-            followDate = new Date(date);
-        }
-        else {
-            followDate = computeNextDate(recurrence);
-        }
-        lead.followUp = {
-            date: followDate,
-            recurrence: recurrence || "once",
-            message: message || null,
-            whatsappOptIn: !!whatsappOptIn,
-            active: true,
-            overdueStatus: "pending",
-            acknowledgedAt: null,
-            rescheduledAt: null,
-            resolvedAt: null,
-        };
-        await lead.save();
-        // ✅ Google Calendar Sync
+        const followDate = date ? new Date(date) : computeNextDate(recurrence);
+        // ✅ $set use karo — save() ki jagah taaki validation bypass ho
+        // Interested lead bhi update ho sake chahe enum mein na ho
+        await lead_model_1.default.findByIdAndUpdate(id, {
+            $set: {
+                "followUp.date": followDate,
+                "followUp.recurrence": recurrence || "once",
+                "followUp.message": message || null,
+                "followUp.whatsappOptIn": !!whatsappOptIn,
+                "followUp.active": true,
+                "followUp.overdueStatus": "pending",
+                "followUp.acknowledgedAt": null,
+                "followUp.rescheduledAt": null,
+                "followUp.resolvedAt": null,
+                ...(message ? { note: message } : {}),
+            },
+        }, { new: true });
+        // Google Calendar sync (agar available hai)
         try {
-            const admin = await admin_model_1.default.findById(req.adminId);
+            const Admin = (await Promise.resolve().then(() => __importStar(require("../models/admin.model")))).default;
+            const { createCalendarEvent } = await Promise.resolve().then(() => __importStar(require("../services/googleCalendar.service")));
+            const admin = await Admin.findById(req.adminId);
             if (admin?.googleCalendar?.refreshToken) {
-                const event = await (0, googleCalendar_service_1.createCalendarEvent)(admin.googleCalendar.refreshToken, lead);
-                if (event && event.id && lead.followUp) {
-                    lead.followUp.googleEventId = event.id;
-                    await lead.save();
+                const updatedLead = await lead_model_1.default.findById(id);
+                if (updatedLead) {
+                    const event = await createCalendarEvent(admin.googleCalendar.refreshToken, updatedLead);
+                    if (event?.id) {
+                        await lead_model_1.default.findByIdAndUpdate(id, { $set: { "followUp.googleEventId": event.id } });
+                    }
                 }
             }
         }
-        catch (err) {
-            console.error("Google Calendar Error:", err);
+        catch (calErr) {
+            console.error("Google Calendar sync error (non-fatal):", calErr);
         }
-        // ✅ Fresh data DB se lo taaki googleEventId included ho
-        const updatedLead = await lead_model_1.default.findById(id);
+        const finalLead = await lead_model_1.default.findById(id);
         return res.json({
             success: true,
             message: "Follow-up scheduled successfully",
-            data: updatedLead?.followUp,
+            data: finalLead?.followUp,
         });
     }
     catch (err) {
@@ -290,6 +324,7 @@ const resolveFollowUp = async (req, res) => {
                 "followUp.active": false,
                 "followUp.overdueStatus": "resolved",
                 "followUp.resolvedAt": new Date(),
+                ...(note ? { note } : {}),
             },
         });
         const rawId = req.params.id;

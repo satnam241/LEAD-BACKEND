@@ -605,12 +605,24 @@ export const createLeadController = async (req: Request, res: Response) => {
     const email     = bodyEmail    || extracted.email    || null;
     const phone     = bodyPhone    || extracted.phone    || null;
 
+    // ✅ FIX: risky random-string fallback hata diya — ab email/budget jaisi
+    // koi bhi random 10+ char string message mein nahi jayegi
     const message =
       bodyMessage ||
       extracted.message ||
       rawData?.message ||
-      Object.values(rawData || {}).find((v) => typeof v === "string" && v.length > 10) ||
       "No message provided";
+
+    // ✅ FIX: budget/timeline — body se ya extracted.extraFields se (jahan bhi mile)
+    const finalBudget =
+      whatIsYourBudget ||
+      extracted.extraFields?.["what_is_your_budget_"] ||
+      null;
+
+    const finalTimeline =
+      whenAreYouPlanningToPurchase ||
+      extracted.extraFields?.["when_are_you_planning_to_purchase_"] ||
+      null;
 
     const source = bodySource || extracted.source || "import";
 
@@ -620,9 +632,11 @@ export const createLeadController = async (req: Request, res: Response) => {
     const lead = new Lead({
       fullName, email, phone,
       phoneVerified: phoneVerified || false,
-      whenAreYouPlanningToPurchase,
-      whatIsYourBudget,
+      whenAreYouPlanningToPurchase: finalTimeline,
+      whatIsYourBudget: finalBudget,
       message, source,
+      // ✅ FIX: top-level extraFields bhi set kiya — pehle sirf rawData ke andar tha
+      extraFields: extracted.extraFields,
       rawData: {
         ...rawData,
         extractedMessage: message,

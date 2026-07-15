@@ -165,10 +165,11 @@ const LeadSchema = new mongoose_1.Schema({
     phoneVerified: { type: Boolean, default: false },
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
-    formName: { type: String, default: null }, // ✅ ADDED — yahi missing tha
+    formName: { type: String, default: null },
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
+    note: { type: String, default: null, trim: true }, // ✅ YAHAN move karo — top-level
     extraFields: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     rawData: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },
@@ -189,7 +190,7 @@ const LeadSchema = new mongoose_1.Schema({
             enum: ["once", "tomorrow", "3days", "weekly", null],
             default: null,
         },
-        message: { type: String, default: null },
+        message: { type: String, default: null }, // ✅ note yaha se hataya, message wapas
         whatsappOptIn: { type: Boolean, default: false },
         active: { type: Boolean, default: false },
         overdueStatus: {

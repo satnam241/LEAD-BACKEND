@@ -187,6 +187,7 @@ export interface ILead extends Document {
     resolvedAt?: Date | null;
     googleEventId?: string | null;   // ✅ ADDED — schema mein tha, interface mein nahi
   };
+  note?: string | null;
 }
 
 const LeadSchema = new Schema<ILead>(
@@ -197,10 +198,11 @@ const LeadSchema = new Schema<ILead>(
     phoneVerified: { type: Boolean, default: false },
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
-    formName: { type: String, default: null },   // ✅ ADDED — yahi missing tha
+    formName: { type: String, default: null },
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
+    note: { type: String, default: null, trim: true },   // ✅ YAHAN move karo — top-level
     extraFields: { type: Schema.Types.Mixed, default: {} },
     rawData: { type: Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },
@@ -221,7 +223,7 @@ const LeadSchema = new Schema<ILead>(
         enum: ["once", "tomorrow", "3days", "weekly", null],
         default: null,
       },
-      message:       { type: String,  default: null },
+      message:       { type: String,  default: null },   // ✅ note yaha se hataya, message wapas
       whatsappOptIn: { type: Boolean, default: false },
       active:        { type: Boolean, default: false },
       overdueStatus: {

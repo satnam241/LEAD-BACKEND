@@ -246,33 +246,27 @@ import { createCalendarEvent,
    from "../services/googleCalendar.service";
 import mongoose from "mongoose";
 
-// 🔥 Better recurrence handling
+
+// import { Request, Response } from "express";
+// import Lead from "../models/lead.model";
+
 const computeNextDate = (recurrence: string, from?: Date): Date => {
   const base = from ? new Date(from) : new Date();
-
   switch (recurrence) {
-    case "tomorrow":
-      base.setDate(base.getDate() + 1);
-      break;
-    case "3days":
-      base.setDate(base.getDate() + 3);
-      break;
-    case "weekly":
-      base.setDate(base.getDate() + 7);
-      break;
-    default:
-      break;
+    case "tomorrow": base.setDate(base.getDate() + 1); break;
+    case "3days":    base.setDate(base.getDate() + 3); break;
+    case "weekly":   base.setDate(base.getDate() + 7); break;
   }
-
   return base;
 };
 
-// ✅ Schedule Follow-up
+// ✅ FIX: scheduleFollowUp — kisi bhi lead pe kaam kare chahe status kuch bhi ho
 export const scheduleFollowUp = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { recurrence, date, message, whatsappOptIn } = req.body;
 
+    // ✅ findById use karo — pre-find hook skip karta hai status check
     const lead = await Lead.findById(id);
     if (!lead) {
       return res.status(404).json({ success: false, error: "Lead not found" });
@@ -285,51 +279,53 @@ export const scheduleFollowUp = async (req: Request, res: Response) => {
       });
     }
 
-    let followDate: Date;
-    if (date) {
-      followDate = new Date(date);
-    } else {
-      followDate = computeNextDate(recurrence);
-    }
+    const followDate: Date = date ? new Date(date) : computeNextDate(recurrence);
 
-    lead.followUp = {
-      date: followDate,
-      recurrence: recurrence || "once",
-      message: message || null,
-      whatsappOptIn: !!whatsappOptIn,
-      active: true,
-      overdueStatus: "pending",
-      acknowledgedAt: null,
-      rescheduledAt: null,
-      resolvedAt: null,
-    };
+    // ✅ $set use karo — save() ki jagah taaki validation bypass ho
+    // Interested lead bhi update ho sake chahe enum mein na ho
+    await Lead.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          "followUp.date":          followDate,
+          "followUp.recurrence":    recurrence || "once",
+          "followUp.message":       message    || null,
+          "followUp.whatsappOptIn": !!whatsappOptIn,
+          "followUp.active":        true,
+          "followUp.overdueStatus": "pending",
+          "followUp.acknowledgedAt": null,
+          "followUp.rescheduledAt":  null,
+          "followUp.resolvedAt":     null,
+          ...(message ? { note: message } : {}), 
+        },
+      },
+      { new: true }
+    );
 
-    await lead.save();
-
-    // ✅ Google Calendar Sync
+    // Google Calendar sync (agar available hai)
     try {
+      const Admin = (await import("../models/admin.model")).default;
+      const { createCalendarEvent } = await import("../services/googleCalendar.service");
       const admin = await Admin.findById((req as any).adminId);
       if (admin?.googleCalendar?.refreshToken) {
-        const event = await createCalendarEvent(
-          admin.googleCalendar.refreshToken,
-          lead,
-        );
-        if (event && event.id && lead.followUp) {
-          (lead.followUp as any).googleEventId = event.id;
-          await lead.save();
+        const updatedLead = await Lead.findById(id);
+        if (updatedLead) {
+          const event = await createCalendarEvent(admin.googleCalendar.refreshToken, updatedLead);
+          if (event?.id) {
+            await Lead.findByIdAndUpdate(id, { $set: { "followUp.googleEventId": event.id } });
+          }
         }
       }
-    } catch (err) {
-      console.error("Google Calendar Error:", err);
+    } catch (calErr) {
+      console.error("Google Calendar sync error (non-fatal):", calErr);
     }
 
-    // ✅ Fresh data DB se lo taaki googleEventId included ho
-    const updatedLead = await Lead.findById(id);
+    const finalLead = await Lead.findById(id);
 
     return res.json({
       success: true,
       message: "Follow-up scheduled successfully",
-      data: updatedLead?.followUp,
+      data:    finalLead?.followUp,
     });
 
   } catch (err) {
@@ -580,6 +576,7 @@ export const resolveFollowUp = async (req: Request, res: Response) => {
         "followUp.active":        false,
         "followUp.overdueStatus": "resolved",
         "followUp.resolvedAt":    new Date(),
+        ...(note ? { note } : {}),
       },
     });
     const rawId = req.params.id;
