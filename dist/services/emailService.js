@@ -7,12 +7,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendEmail = void 0;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const googleapis_1 = require("googleapis");
+const dns_1 = __importDefault(require("dns"));
+dns_1.default.setServers(["8.8.8.8", "8.8.4.4"]);
 const OAuth2 = googleapis_1.google.auth.OAuth2;
 // Create OAuth client
-const oauth2Client = new OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, "https://developers.google.com/oauthplayground");
+const oauth2Client = new OAuth2(process.env.EMAIL_GOOGLE_CLIENT_ID, process.env.EMAIL_GOOGLE_CLIENT_SECRET, "https://developers.google.com/oauthplayground");
 // Set refresh token
 oauth2Client.setCredentials({
-    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    refresh_token: process.env.EMAIL_GOOGLE_REFRESH_TOKEN,
 });
 const sendEmail = async (to, subject, html, attachments) => {
     try {
@@ -22,15 +24,15 @@ const sendEmail = async (to, subject, html, attachments) => {
             service: "gmail",
             auth: {
                 type: "OAuth2",
-                user: process.env.GOOGLE_USER,
-                clientId: process.env.GOOGLE_CLIENT_ID,
-                clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-                refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+                user: process.env.EMAIL_GOOGLE_USER,
+                clientId: process.env.EMAIL_GOOGLE_CLIENT_ID,
+                clientSecret: process.env.EMAIL_GOOGLE_CLIENT_SECRET,
+                refreshToken: process.env.EMAIL_GOOGLE_REFRESH_TOKEN,
                 accessToken: accessToken.token,
             },
         });
         const mailOptions = {
-            from: process.env.GOOGLE_USER,
+            from: process.env.EMAIL_GOOGLE_USER,
             to,
             subject,
             html,

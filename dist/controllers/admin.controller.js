@@ -3,11 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getNotifications = exports.adminAdvancedMonthlyReport = exports.getPendingReminderCount = exports.markAsContacted = exports.getReminderLeads = exports.adminGetProfile = exports.importLeadsController = exports.adminDailyStats = exports.adminDeleteLead = exports.adminUpdateLead = exports.adminExportLeads = exports.adminGetLeads = exports.changePasswordLoggedIn = exports.forgotPassword = exports.adminLogin = exports.adminSignup = void 0;
+exports.resetPasswordWithToken = exports.adminExportMonthlyReport = exports.getNotifications = exports.adminAdvancedMonthlyReport = exports.getPendingReminderCount = exports.markAsContacted = exports.getReminderLeads = exports.adminGetProfile = exports.importLeadsController = exports.adminDailyStats = exports.adminDeleteLead = exports.adminUpdateLead = exports.adminExportLeads = exports.adminGetLeads = exports.changePasswordLoggedIn = exports.forgotPassword = exports.adminLogin = exports.adminSignup = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const json2csv_1 = require("json2csv");
-const nodemailer_1 = __importDefault(require("nodemailer"));
 const admin_model_1 = __importDefault(require("../models/admin.model"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const exceljs_1 = __importDefault(require("exceljs"));
@@ -36,6 +35,7 @@ const getPhone = (row) => {
 };
 const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
 const FRONTEND_URL = process.env.FRONTEND_URL;
+const FRONTEND_URL1 = process.env.FRONTEND_URL1;
 // ── Admin Signup ──────────────────────────────────────────────────────────────
 const adminSignup = async (req, res) => {
     try {
@@ -75,7 +75,9 @@ const adminLogin = async (req, res) => {
     }
 };
 exports.adminLogin = adminLogin;
-// ── Forgot Password ───────────────────────────────────────────────────────────
+// ── Forgot Password ────────────────────────
+const emailService_1 = require("../services/emailService");
+// forgotPassword function ko ye replace karo
 const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
@@ -83,17 +85,8 @@ const forgotPassword = async (req, res) => {
         if (!admin)
             return res.status(404).json({ success: false, error: "Admin not found" });
         const token = jsonwebtoken_1.default.sign({ id: admin._id }, JWT_SECRET, { expiresIn: "15m" });
-        const resetLink = `${FRONTEND_URL}/reset-password/${token}`;
-        const transporter = nodemailer_1.default.createTransport({
-            service: "gmail",
-            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-        });
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: admin.email,
-            subject: "Password Reset",
-            html: `<p>Click the link to reset your password (valid 15 mins):</p><a href="${resetLink}">${resetLink}</a>`,
-        });
+        const resetLink = `${FRONTEND_URL1}/reset-password/${token}`;
+        await (0, emailService_1.sendEmail)(admin.email, "Password Reset Request", `<p>Click the link to reset your password (valid 15 mins):</p><a href="${resetLink}">${resetLink}</a>`);
         res.json({ success: true, message: "Reset link sent to email" });
     }
     catch (err) {
@@ -702,4 +695,156 @@ const getNotifications = async (req, res) => {
     }
 };
 exports.getNotifications = getNotifications;
+// ── Monthly Report Export (Excel) ──────────────────────────────────────────
+const adminExportMonthlyReport = async (req, res) => {
+    try {
+        const month = Number(req.query.month);
+        const year = Number(req.query.year);
+        if (!month || !year) {
+            return res.status(400).json({ success: false, error: "month and year are required" });
+        }
+        const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+        const leads = await lead_model_1.default.find({
+            isDeleted: false,
+            createdAt: { $gte: startDate, $lte: endDate },
+        }).sort({ createdAt: -1 });
+        // ── Summary counts ──────────────────────────────────────────
+        const summary = {
+            total: leads.length,
+            new: 0,
+            contacted: 0,
+            interested: 0,
+            negotiation: 0,
+            visitor: 0,
+            closed: 0,
+            lost: 0,
+        };
+        leads.forEach((l) => {
+            const s = (l.status || "new");
+            if (s in summary)
+                summary[s]++;
+        });
+        const monthLabel = startDate.toLocaleString("en-IN", { month: "long", year: "numeric" });
+        // ── Single workbook, single sheet ────────────────────────────
+        const wb = new exceljs_1.default.Workbook();
+        const sheet = wb.addWorksheet("Monthly Report");
+        const headers = [
+            "Full Name", "Email", "Phone", "Source",
+            "Budget", "Purchase Timeline", "Message", "Note", "Received At",
+        ];
+        // ── Title ─────────────────────────────────────────────────────
+        const titleRow = sheet.addRow([`Monthly Report — ${monthLabel}`]);
+        sheet.mergeCells(titleRow.number, 1, titleRow.number, headers.length);
+        titleRow.font = { bold: true, size: 14 };
+        sheet.addRow([]);
+        // ── Summary section ──────────────────────────────────────────
+        const summaryHeaderRow = sheet.addRow(["Metric", "Count"]);
+        summaryHeaderRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        summaryHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
+        const summaryRows = [
+            ["Total Leads", summary.total],
+            ["New", summary.new],
+            ["Contacted", summary.contacted],
+            ["Interested", summary.interested],
+            ["Negotiation", summary.negotiation],
+            ["Visitor", summary.visitor],
+            ["Closed (Won)", summary.closed],
+            ["Lost", summary.lost],
+        ];
+        summaryRows.forEach(([label, count]) => sheet.addRow([label, count]));
+        sheet.addRow([]);
+        sheet.addRow([]);
+        // ── Lead details, grouped by status ──────────────────────────
+        const detailsTitleRow = sheet.addRow(["Lead Details"]);
+        sheet.mergeCells(detailsTitleRow.number, 1, detailsTitleRow.number, headers.length);
+        detailsTitleRow.font = { bold: true, size: 13 };
+        sheet.addRow([]);
+        const statusOrder = [
+            { key: "new", label: "New" },
+            { key: "contacted", label: "Contacted" },
+            { key: "interested", label: "Interested" },
+            { key: "negotiation", label: "Negotiation" },
+            { key: "visitor", label: "Visitor" },
+            { key: "closed", label: "Closed (Won)" },
+            { key: "lost", label: "Lost" },
+        ];
+        for (const { key, label } of statusOrder) {
+            const groupLeads = leads.filter((l) => (l.status ?? "new") === key);
+            if (groupLeads.length === 0)
+                continue;
+            const headingRow = sheet.addRow([`${label} (${groupLeads.length})`]);
+            sheet.mergeCells(headingRow.number, 1, headingRow.number, headers.length);
+            headingRow.font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
+            headingRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
+            headingRow.height = 20;
+            const colHeaderRow = sheet.addRow(headers);
+            colHeaderRow.font = { bold: true };
+            colHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+            groupLeads.forEach((l, i) => {
+                const row = sheet.addRow([
+                    l.fullName ?? "",
+                    l.email ?? "",
+                    l.phone ?? "",
+                    l.source ?? "",
+                    l.extraFields?.what_is_your_budget_ ?? l.whatIsYourBudget ?? "",
+                    l.extraFields?.when_are_you_planning_to_purchase_ ?? l.whenAreYouPlanningToPurchase ?? "",
+                    l.message && l.message !== "No message provided" ? l.message : "",
+                    l.note ?? "",
+                    l.createdAt ? new Date(l.createdAt).toLocaleString("en-IN") : "",
+                ]);
+                row.fill = {
+                    type: "pattern", pattern: "solid",
+                    fgColor: { argb: i % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC" },
+                };
+            });
+            sheet.addRow([]);
+        }
+        sheet.columns.forEach((col) => {
+            let max = 12;
+            col.eachCell?.({ includeEmpty: true }, (cell) => {
+                const len = cell.value ? String(cell.value).length : 0;
+                if (len > max)
+                    max = len;
+            });
+            col.width = Math.min(max + 4, 40);
+        });
+        const filename = `monthly-report-${monthLabel.replace(" ", "-")}`;
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}.xlsx"`);
+        await wb.xlsx.write(res);
+        return res.end();
+    }
+    catch (err) {
+        console.error("Monthly report export error:", err);
+        res.status(500).json({ success: false, error: "Server error" });
+    }
+};
+exports.adminExportMonthlyReport = adminExportMonthlyReport;
+// ── Reset Password via Email Token ────────────────────────────────────────────
+const resetPasswordWithToken = async (req, res) => {
+    try {
+        const { token, newPassword } = req.body;
+        if (!token || !newPassword)
+            return res.status(400).json({ success: false, error: "Token and new password required" });
+        let decoded;
+        try {
+            decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        }
+        catch {
+            return res.status(400).json({ success: false, error: "Reset link expired or invalid" });
+        }
+        const admin = await admin_model_1.default.findById(decoded.id);
+        if (!admin)
+            return res.status(404).json({ success: false, error: "Admin not found" });
+        admin.password = await bcryptjs_1.default.hash(newPassword, 10);
+        await admin.save();
+        res.json({ success: true, message: "Password reset successfully" });
+    }
+    catch (err) {
+        console.error("Reset password error:", err);
+        res.status(500).json({ success: false, error: "Server error" });
+    }
+};
+exports.resetPasswordWithToken = resetPasswordWithToken;
 //# sourceMappingURL=admin.controller.js.map

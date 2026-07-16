@@ -17,6 +17,7 @@ const debug_route_1 = __importDefault(require("./routes/debug.route"));
 const activity_routes_1 = __importDefault(require("./routes/activity.routes"));
 const followup_routes_1 = __importDefault(require("./routes/followup.routes"));
 const google_routes_1 = __importDefault(require("./routes/google.routes"));
+const followupNotifier_1 = require("./services/followupNotifier");
 const app = (0, express_1.default)();
 app.use("/public", express_1.default.static("public"));
 app.use((0, cors_1.default)({ origin: true, credentials: true }));
@@ -37,7 +38,11 @@ app.use("/api/google", google_routes_1.default);
 // ✅ PROPER SERVER START
 const startServer = async () => {
     await (0, DB_1.connectDB)(); // DB ready hone do
+    console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
+    console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
+    console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REFRESH_TOKEN);
     // startAllJobs(); // 🔥 cron yaha start karo
+    (0, followupNotifier_1.startFollowupNotifier)();
     const PORT = process.env.PORT || 4520;
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);

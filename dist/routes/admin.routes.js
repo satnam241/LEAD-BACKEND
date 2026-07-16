@@ -107,6 +107,7 @@ router.post("/login", admin_controller_1.adminLogin);
 router.post("/forgot-password", admin_controller_1.forgotPassword);
 router.post("/reset-password", admin_controller_1.changePasswordLoggedIn);
 router.get("/me", admin_controller_1.adminGetProfile);
+router.post("/reset-password-token", admin_controller_1.resetPasswordWithToken);
 // ── Lead Management ───────────────────────────────────────────────
 router.get("/leads", adminAuth_1.adminAuth, admin_controller_1.adminGetLeads);
 router.put("/leads/:id", adminAuth_1.adminAuth, admin_controller_1.adminUpdateLead);
@@ -117,6 +118,7 @@ router.get("/leads/export", adminAuth_1.adminAuth, admin_controller_1.adminExpor
 // ── Stats ─────────────────────────────────────────────────────────
 router.get("/stats/daily", adminAuth_1.adminAuth, admin_controller_1.adminDailyStats);
 router.get("/monthly-report", adminAuth_1.adminAuth, admin_controller_1.adminAdvancedMonthlyReport);
+router.get("/leads/monthly-report", admin_controller_1.adminExportMonthlyReport);
 // ── Reminders ─────────────────────────────────────────────────────
 router.get("/reminders", adminAuth_1.adminAuth, admin_controller_1.getReminderLeads);
 router.put("/reminders/contacted/:id", adminAuth_1.adminAuth, admin_controller_1.markAsContacted);
