@@ -15,6 +15,8 @@ import debugRoute from "./routes/debug.route";
 import activityRoutes from "./routes/activity.routes";
 import followup from "./routes/followup.routes";
 import googleRoutes from "./routes/google.routes";
+import { startFollowupNotifier } from "./services/followupNotifier";
+
 
 const app = express();
 
@@ -40,9 +42,12 @@ app.use("/api/google",googleRoutes);
 // ✅ PROPER SERVER START
 const startServer = async () => {
   await connectDB(); // DB ready hone do
-
+console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
+console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
+console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REFRESH_TOKEN);
  // startAllJobs(); // 🔥 cron yaha start karo
 
+startFollowupNotifier();
   const PORT = process.env.PORT || 4520;
 
   app.listen(PORT, () => {

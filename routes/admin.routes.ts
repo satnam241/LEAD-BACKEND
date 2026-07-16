@@ -136,6 +136,8 @@ import {
   markAsContacted,
   getPendingReminderCount,
   getNotifications,
+  adminExportMonthlyReport ,
+  resetPasswordWithToken 
 } from "../controllers/admin.controller";
 
 import { adminAuth } from "../middleware/adminAuth";
@@ -149,7 +151,7 @@ router.post("/login",           adminLogin);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password",  changePasswordLoggedIn);
 router.get ("/me",              adminGetProfile);
-
+router.post("/reset-password-token", resetPasswordWithToken);
 // ── Lead Management ───────────────────────────────────────────────
 router.get   ("/leads",      adminAuth, adminGetLeads);
 router.put   ("/leads/:id",  adminAuth, adminUpdateLead);
@@ -162,6 +164,7 @@ router.get ("/leads/export",  adminAuth, adminExportLeads);
 // ── Stats ─────────────────────────────────────────────────────────
 router.get("/stats/daily",    adminAuth, adminDailyStats);
 router.get("/monthly-report", adminAuth, adminAdvancedMonthlyReport);
+router.get("/leads/monthly-report", adminExportMonthlyReport);
 
 // ── Reminders ─────────────────────────────────────────────────────
 router.get("/reminders",               adminAuth, getReminderLeads);
