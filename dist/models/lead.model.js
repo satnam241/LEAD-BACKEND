@@ -169,7 +169,7 @@ const LeadSchema = new mongoose_1.Schema({
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
-    note: { type: String, default: null, trim: true }, // ✅ YAHAN move karo — top-level
+    note: { type: String, default: null, trim: true },
     extraFields: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     rawData: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },
@@ -177,7 +177,10 @@ const LeadSchema = new mongoose_1.Schema({
     lastReminderSent: { type: Date, default: null },
     status: {
         type: String,
-        enum: ["new", "contacted", "closed", "lost", "negotiation", "visitor"],
+        // ✅ FIX — "interested" add kiya, warna save() ya validate() call karne wale
+        // kisi bhi controller (cancelFollowUp, resolveFollowUp, updateLeadController) mein
+        // "interested" status wali leads ke saath ValidationError aata tha
+        enum: ["new", "contacted", "interested", "closed", "lost", "negotiation", "visitor"],
         default: "new",
         index: true,
     },
@@ -190,7 +193,7 @@ const LeadSchema = new mongoose_1.Schema({
             enum: ["once", "tomorrow", "3days", "weekly", null],
             default: null,
         },
-        message: { type: String, default: null }, // ✅ note yaha se hataya, message wapas
+        message: { type: String, default: null },
         whatsappOptIn: { type: Boolean, default: false },
         active: { type: Boolean, default: false },
         overdueStatus: {
@@ -202,6 +205,7 @@ const LeadSchema = new mongoose_1.Schema({
         rescheduledAt: { type: Date, default: null },
         resolvedAt: { type: Date, default: null },
         googleEventId: { type: String, default: null },
+        notifiedAt: { type: Date, default: null }, // ✅ exact-time notification tracking
     },
 }, { timestamps: true });
 LeadSchema.pre(/^find/, function (next) {

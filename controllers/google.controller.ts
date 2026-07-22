@@ -6,14 +6,14 @@ import Admin from "../models/admin.model";
 export const connectGoogle = async (req: Request, res: Response) => {
   try {
     const url = oauth2Client.generateAuthUrl({
-      access_type: "offline",
-
-    //   prompt: "consent",
-
-      scope: ["https://www.googleapis.com/auth/calendar"],
-      include_granted_scopes:true
-
-    });
+  access_type: "offline",
+  prompt: "consent",
+  include_granted_scopes: true,
+  scope: [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.send",
+  ],
+});
 
     return res.redirect(url);
   } catch (err) {
@@ -56,7 +56,7 @@ export const googleCallback = async (req: Request, res: Response) => {
 
     console.log("GOOGLE SAVED");
 
-    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+    return res.redirect(`${process.env.FRONTEND_URL1}`);
   } catch (err) {
     console.log("GOOGLE ERROR:", err);
 

@@ -10,7 +10,7 @@ const OAuth2 = google.auth.OAuth2;
 const oauth2Client = new OAuth2(
   process.env.EMAIL_GOOGLE_CLIENT_ID,
   process.env.EMAIL_GOOGLE_CLIENT_SECRET,
-  "https://developers.google.com/oauthplayground"
+  process.env.GOOGLE_REDIRECT_URI,
 );
 
 // Set refresh token

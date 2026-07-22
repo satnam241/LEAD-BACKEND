@@ -151,7 +151,6 @@
 // LeadSchema.index({ phone: 1, email: 1 });
 
 // export default mongoose.model<ILead>("Lead", LeadSchema);
-
 import mongoose, { Schema, Document, Query } from "mongoose";
 
 export interface ILead extends Document {
@@ -161,7 +160,7 @@ export interface ILead extends Document {
   phoneVerified?: boolean;
   source?: string;
   formId?: string | null;
-  formName?: string | null;          // ✅ ADDED — fbWebhook.ts ke liye
+  formName?: string | null;
   whenAreYouPlanningToPurchase?: string | null;
   whatIsYourBudget?: string | null;
   message?: string;
@@ -172,7 +171,7 @@ export interface ILead extends Document {
   updatedAt?: Date;
   reminderCount?: number;
   lastReminderSent?: Date | null;
-  status?: "new" | "contacted" | "closed" | "lost" | "negotiation" | "visitor";
+  status?: "new" | "contacted" | "interested" | "closed" | "lost" | "negotiation" | "visitor";
   isDeleted?: boolean;
   deletedAt?: Date | null;
   followUp?: {
@@ -185,7 +184,8 @@ export interface ILead extends Document {
     acknowledgedAt?: Date | null;
     rescheduledAt?: Date | null;
     resolvedAt?: Date | null;
-    googleEventId?: string | null;   // ✅ ADDED — schema mein tha, interface mein nahi
+    googleEventId?: string | null;
+    notifiedAt?: Date | null;   // ✅ FIX — ab sahi interface field hai (pehle schema syntax galat tha)
   };
   note?: string | null;
 }
@@ -202,7 +202,7 @@ const LeadSchema = new Schema<ILead>(
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
-    note: { type: String, default: null, trim: true },   // ✅ YAHAN move karo — top-level
+    note: { type: String, default: null, trim: true },
     extraFields: { type: Schema.Types.Mixed, default: {} },
     rawData: { type: Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },
@@ -210,7 +210,10 @@ const LeadSchema = new Schema<ILead>(
     lastReminderSent: { type: Date, default: null },
     status: {
       type: String,
-      enum: ["new", "contacted", "closed", "lost", "negotiation", "visitor"],
+      // ✅ FIX — "interested" add kiya, warna save() ya validate() call karne wale
+      // kisi bhi controller (cancelFollowUp, resolveFollowUp, updateLeadController) mein
+      // "interested" status wali leads ke saath ValidationError aata tha
+      enum: ["new", "contacted", "interested", "closed", "lost", "negotiation", "visitor"],
       default: "new",
       index: true,
     },
@@ -223,7 +226,7 @@ const LeadSchema = new Schema<ILead>(
         enum: ["once", "tomorrow", "3days", "weekly", null],
         default: null,
       },
-      message:       { type: String,  default: null },   // ✅ note yaha se hataya, message wapas
+      message:       { type: String,  default: null },
       whatsappOptIn: { type: Boolean, default: false },
       active:        { type: Boolean, default: false },
       overdueStatus: {
@@ -235,6 +238,7 @@ const LeadSchema = new Schema<ILead>(
       rescheduledAt:  { type: Date, default: null },
       resolvedAt:     { type: Date, default: null },
       googleEventId:  { type: String, default: null },
+      notifiedAt:     { type: Date, default: null }, // ✅ exact-time notification tracking
     },
   },
   { timestamps: true }

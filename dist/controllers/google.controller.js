@@ -11,9 +11,12 @@ const connectGoogle = async (req, res) => {
     try {
         const url = google_1.oauth2Client.generateAuthUrl({
             access_type: "offline",
-            //   prompt: "consent",
-            scope: ["https://www.googleapis.com/auth/calendar"],
-            include_granted_scopes: true
+            prompt: "consent",
+            include_granted_scopes: true,
+            scope: [
+                "https://www.googleapis.com/auth/calendar.events",
+                "https://www.googleapis.com/auth/gmail.send",
+            ],
         });
         return res.redirect(url);
     }
@@ -45,7 +48,7 @@ const googleCallback = async (req, res) => {
         };
         await admin.save();
         console.log("GOOGLE SAVED");
-        return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+        return res.redirect(`${process.env.FRONTEND_URL1}`);
     }
     catch (err) {
         console.log("GOOGLE ERROR:", err);

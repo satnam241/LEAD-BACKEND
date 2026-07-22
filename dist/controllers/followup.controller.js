@@ -45,8 +45,6 @@ const followupLog_model_1 = __importDefault(require("../models/followupLog.model
 const admin_model_1 = __importDefault(require("../models/admin.model"));
 const googleCalendar_service_1 = require("../services/googleCalendar.service");
 const mongoose_1 = __importDefault(require("mongoose"));
-// import { Request, Response } from "express";
-// import Lead from "../models/lead.model";
 const computeNextDate = (recurrence, from) => {
     const base = from ? new Date(from) : new Date();
     switch (recurrence) {
@@ -67,7 +65,6 @@ const scheduleFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
         const { recurrence, date, message, whatsappOptIn } = req.body;
-        // ✅ findById use karo — pre-find hook skip karta hai status check
         const lead = await lead_model_1.default.findById(id);
         if (!lead) {
             return res.status(404).json({ success: false, error: "Lead not found" });
@@ -78,9 +75,9 @@ const scheduleFollowUp = async (req, res) => {
                 error: "Either date or recurrence is required",
             });
         }
+        // ✅ new Date(date) — agar date "yyyy-MM-ddTHH:mm" (datetime-local) format mein aaya
+        // hai to time bhi automatically preserve ho jayega
         const followDate = date ? new Date(date) : computeNextDate(recurrence);
-        // ✅ $set use karo — save() ki jagah taaki validation bypass ho
-        // Interested lead bhi update ho sake chahe enum mein na ho
         await lead_model_1.default.findByIdAndUpdate(id, {
             $set: {
                 "followUp.date": followDate,
@@ -92,6 +89,7 @@ const scheduleFollowUp = async (req, res) => {
                 "followUp.acknowledgedAt": null,
                 "followUp.rescheduledAt": null,
                 "followUp.resolvedAt": null,
+                "followUp.notifiedAt": null, // ✅ FIX — reset karo taaki naye time pe dobara exact-time alert bhej sake
                 ...(message ? { note: message } : {}),
             },
         }, { new: true });
@@ -132,12 +130,8 @@ const cancelFollowUp = async (req, res) => {
         const { id } = req.params;
         const lead = await lead_model_1.default.findById(id);
         if (!lead) {
-            return res.status(404).json({
-                success: false,
-                error: "Lead not found",
-            });
+            return res.status(404).json({ success: false, error: "Lead not found" });
         }
-        // ✅ Delete calendar event
         try {
             const admin = await admin_model_1.default.findById(req.adminId);
             if (lead.followUp?.googleEventId && admin?.googleCalendar?.refreshToken) {
@@ -148,31 +142,26 @@ const cancelFollowUp = async (req, res) => {
         catch (err) {
             console.log("DELETE ERROR", err);
         }
-        // existing reset
-        lead.followUp = {
-            date: null,
-            recurrence: null,
-            message: null,
-            whatsappOptIn: false,
-            active: false,
-            overdueStatus: "pending",
-            acknowledgedAt: null,
-            rescheduledAt: null,
-            resolvedAt: null,
-            googleEventId: null,
-        };
-        await lead.save();
-        return res.json({
-            success: true,
-            message: "Follow-up cancelled",
-        });
+        await lead_model_1.default.findByIdAndUpdate(id, {
+            $set: {
+                "followUp.date": null,
+                "followUp.recurrence": null,
+                "followUp.message": null,
+                "followUp.whatsappOptIn": false,
+                "followUp.active": false,
+                "followUp.overdueStatus": "pending",
+                "followUp.acknowledgedAt": null,
+                "followUp.rescheduledAt": null,
+                "followUp.resolvedAt": null,
+                "followUp.googleEventId": null,
+                "followUp.notifiedAt": null,
+            },
+        }, { new: true });
+        return res.json({ success: true, message: "Follow-up cancelled" });
     }
     catch (err) {
         console.error("Cancel error:", err);
-        return res.status(500).json({
-            success: false,
-            error: "Server error",
-        });
+        return res.status(500).json({ success: false, error: "Server error" });
     }
 };
 exports.cancelFollowUp = cancelFollowUp;
@@ -183,7 +172,7 @@ const listFollowUps = async (_req, res) => {
             "followUp.active": true,
             "followUp.date": { $ne: null },
         })
-            .select("fullName phone email followUp")
+            .select("fullName phone email followUp note")
             .sort({ "followUp.date": 1 });
         return res.json({ success: true, data: followUps });
     }
@@ -213,7 +202,7 @@ const getUpcomingFollowUps = async (req, res) => {
             filter.$or = [{ fullName: regex }, { phone: regex }, { email: regex }];
         }
         const leads = await lead_model_1.default.find(filter)
-            .select("fullName phone email followUp")
+            .select("fullName phone email followUp note")
             .sort({ "followUp.date": 1 })
             .lean();
         const validRecurrences = ["once", "tomorrow", "3days", "weekly"];
@@ -242,7 +231,7 @@ const getDueFollowUps = async (_req, res) => {
             "followUp.active": true,
             "followUp.date": { $gte: startOfDay, $lte: endOfDay },
         })
-            .select("fullName phone email followUp")
+            .select("fullName phone email followUp note")
             .sort({ "followUp.date": 1 });
         return res.json({ success: true, data: due });
     }
@@ -258,11 +247,10 @@ const getOverdueFollowUps = async (_req, res) => {
         const now = new Date();
         const overdue = await lead_model_1.default.find({
             "followUp.date": { $lt: now },
-            "followUp.overdueStatus": { $ne: "resolved" }, // resolved wale hide karo
+            "followUp.overdueStatus": { $ne: "resolved" },
         })
-            .select("fullName phone email followUp status createdAt")
+            .select("fullName phone email followUp note status createdAt")
             .sort({ "followUp.date": 1 });
-        // Kitne time se overdue hai — human readable label
         const data = overdue.map((lead) => {
             const overdueMs = now.getTime() - new Date(lead.followUp.date).getTime();
             const mins = Math.floor(overdueMs / 60000);
@@ -277,6 +265,7 @@ const getOverdueFollowUps = async (_req, res) => {
                 phone: lead.phone,
                 email: lead.email,
                 status: lead.status,
+                note: lead.note,
                 followUp: lead.followUp,
                 overdueLabel,
                 overdueMs,
@@ -318,7 +307,6 @@ const resolveFollowUp = async (req, res) => {
         const lead = await lead_model_1.default.findById(id);
         if (!lead)
             return res.status(404).json({ success: false, error: "Lead not found" });
-        // Deactivate + mark resolved
         await lead_model_1.default.findByIdAndUpdate(id, {
             $set: {
                 "followUp.active": false,
@@ -332,7 +320,6 @@ const resolveFollowUp = async (req, res) => {
         if (!mongoose_1.default.Types.ObjectId.isValid(leadId)) {
             return res.status(400).json({ error: "Invalid lead ID" });
         }
-        // Log banao
         await followupLog_model_1.default.create({
             leadId: new mongoose_1.default.Types.ObjectId(leadId),
             message: note || lead.followUp?.message || "Follow-up completed",
@@ -354,7 +341,6 @@ const rescheduleFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
         const { newDate } = req.body;
-        // default tomorrow
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(10, 0, 0, 0);
@@ -365,17 +351,15 @@ const rescheduleFollowUp = async (req, res) => {
                 "followUp.active": true,
                 "followUp.overdueStatus": "rescheduled",
                 "followUp.rescheduledAt": new Date(),
+                "followUp.notifiedAt": null, // ✅ FIX — reset karo taaki naye time pe dobara exact-time alert bhej sake
             },
-        }, {
-            new: true,
-        });
+        }, { new: true });
         if (!lead) {
             return res.status(404).json({
                 success: false,
                 error: "Lead not found",
             });
         }
-        // ✅ Calendar Update
         try {
             const admin = await admin_model_1.default.findById(req.adminId);
             if (lead.followUp?.googleEventId && admin?.googleCalendar?.refreshToken) {
@@ -388,7 +372,7 @@ const rescheduleFollowUp = async (req, res) => {
         }
         return res.json({
             success: true,
-            message: `Rescheduled to ${scheduledDate.toLocaleDateString("en-IN")}`,
+            message: `Rescheduled to ${scheduledDate.toLocaleString("en-IN")}`,
             data: lead.followUp,
         });
     }

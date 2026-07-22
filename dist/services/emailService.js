@@ -11,7 +11,7 @@ const dns_1 = __importDefault(require("dns"));
 dns_1.default.setServers(["8.8.8.8", "8.8.4.4"]);
 const OAuth2 = googleapis_1.google.auth.OAuth2;
 // Create OAuth client
-const oauth2Client = new OAuth2(process.env.EMAIL_GOOGLE_CLIENT_ID, process.env.EMAIL_GOOGLE_CLIENT_SECRET, "https://developers.google.com/oauthplayground");
+const oauth2Client = new OAuth2(process.env.EMAIL_GOOGLE_CLIENT_ID, process.env.EMAIL_GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
 // Set refresh token
 oauth2Client.setCredentials({
     refresh_token: process.env.EMAIL_GOOGLE_REFRESH_TOKEN,
