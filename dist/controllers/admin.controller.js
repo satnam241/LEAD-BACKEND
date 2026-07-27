@@ -67,7 +67,11 @@ const adminLogin = async (req, res) => {
         if (!isMatch)
             return res.status(400).json({ success: false, error: "Invalid credentials" });
         const token = jsonwebtoken_1.default.sign({ id: admin._id, role: "admin" }, JWT_SECRET, { expiresIn: "1h" });
-        res.json({ success: true, token, admin: { id: admin._id, email: admin.email } });
+        res.json({
+            success: true,
+            token,
+            admin: { id: admin._id, email: admin.email, name: admin.name }, // ✅ FIX — name add kiya
+        });
     }
     catch (err) {
         console.error("Admin login error:", err);

@@ -188,6 +188,8 @@ export interface ILead extends Document {
     notifiedAt?: Date | null;   // ✅ FIX — ab sahi interface field hai (pehle schema syntax galat tha)
   };
   note?: string | null;
+  assignedTo?: string | null;   
+  assignedBy?: string | null;
 }
 
 const LeadSchema = new Schema<ILead>(
@@ -203,6 +205,8 @@ const LeadSchema = new Schema<ILead>(
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
     note: { type: String, default: null, trim: true },
+    assignedTo: { type: String, default: null, trim: true },
+    assignedBy: { type: String, default: null, trim: true }, 
     extraFields: { type: Schema.Types.Mixed, default: {} },
     rawData: { type: Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },

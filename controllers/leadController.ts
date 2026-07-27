@@ -598,6 +598,8 @@ export const createLeadController = async (req: Request, res: Response) => {
       source:   bodySource,
       rawData,
       message:  bodyMessage,
+      assignedTo, 
+      assignedBy,  // 🆕
     } = req.body;
 
     const extracted = extractFields(rawData || {});
@@ -635,6 +637,8 @@ export const createLeadController = async (req: Request, res: Response) => {
       whenAreYouPlanningToPurchase: finalTimeline,
       whatIsYourBudget: finalBudget,
       message, source,
+      assignedTo: assignedTo || null,
+      assignedBy: assignedBy || null,
       // ✅ FIX: top-level extraFields bhi set kiya — pehle sirf rawData ke andar tha
       extraFields: extracted.extraFields,
       rawData: {

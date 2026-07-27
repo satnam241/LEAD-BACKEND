@@ -172,7 +172,7 @@ const listFollowUps = async (_req, res) => {
             "followUp.active": true,
             "followUp.date": { $ne: null },
         })
-            .select("fullName phone email followUp note")
+            .select("fullName phone email followUp note assignedTo assignedBy")
             .sort({ "followUp.date": 1 });
         return res.json({ success: true, data: followUps });
     }
@@ -202,7 +202,7 @@ const getUpcomingFollowUps = async (req, res) => {
             filter.$or = [{ fullName: regex }, { phone: regex }, { email: regex }];
         }
         const leads = await lead_model_1.default.find(filter)
-            .select("fullName phone email followUp note")
+            .select("fullName phone email followUp note assignedTo assignedBy")
             .sort({ "followUp.date": 1 })
             .lean();
         const validRecurrences = ["once", "tomorrow", "3days", "weekly"];
@@ -231,7 +231,7 @@ const getDueFollowUps = async (_req, res) => {
             "followUp.active": true,
             "followUp.date": { $gte: startOfDay, $lte: endOfDay },
         })
-            .select("fullName phone email followUp note")
+            .select("fullName phone email followUp note assignedTo assignedBy")
             .sort({ "followUp.date": 1 });
         return res.json({ success: true, data: due });
     }
@@ -249,7 +249,7 @@ const getOverdueFollowUps = async (_req, res) => {
             "followUp.date": { $lt: now },
             "followUp.overdueStatus": { $ne: "resolved" },
         })
-            .select("fullName phone email followUp note status createdAt")
+            .select("fullName phone email followUp note assignedTo assignedBy status createdAt")
             .sort({ "followUp.date": 1 });
         const data = overdue.map((lead) => {
             const overdueMs = now.getTime() - new Date(lead.followUp.date).getTime();

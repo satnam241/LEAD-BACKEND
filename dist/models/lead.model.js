@@ -170,6 +170,8 @@ const LeadSchema = new mongoose_1.Schema({
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
     note: { type: String, default: null, trim: true },
+    assignedTo: { type: String, default: null, trim: true },
+    assignedBy: { type: String, default: null, trim: true },
     extraFields: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     rawData: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },

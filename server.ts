@@ -16,7 +16,7 @@ import activityRoutes from "./routes/activity.routes";
 import followup from "./routes/followup.routes";
 import googleRoutes from "./routes/google.routes";
 import { startFollowupNotifier } from "./services/followupNotifier";
-
+import assigneeRoutes from "./routes/assigneeRoutes";
 
 const app = express();
 
@@ -38,6 +38,7 @@ app.use("/api/debug", debugRoute);
 app.use("/api/activity", activityRoutes);
 app.use("/api/followup", followup);
 app.use("/api/google",googleRoutes);
+app.use("/api/assignees", assigneeRoutes);
 
 // ✅ PROPER SERVER START
 const startServer = async () => {

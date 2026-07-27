@@ -18,6 +18,7 @@ const activity_routes_1 = __importDefault(require("./routes/activity.routes"));
 const followup_routes_1 = __importDefault(require("./routes/followup.routes"));
 const google_routes_1 = __importDefault(require("./routes/google.routes"));
 const followupNotifier_1 = require("./services/followupNotifier");
+const assigneeRoutes_1 = __importDefault(require("./routes/assigneeRoutes"));
 const app = (0, express_1.default)();
 app.use("/public", express_1.default.static("public"));
 app.use((0, cors_1.default)({ origin: true, credentials: true }));
@@ -35,6 +36,7 @@ app.use("/api/debug", debug_route_1.default);
 app.use("/api/activity", activity_routes_1.default);
 app.use("/api/followup", followup_routes_1.default);
 app.use("/api/google", google_routes_1.default);
+app.use("/api/assignees", assigneeRoutes_1.default);
 // ✅ PROPER SERVER START
 const startServer = async () => {
     await (0, DB_1.connectDB)(); // DB ready hone do

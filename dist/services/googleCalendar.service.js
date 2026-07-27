@@ -17,6 +17,26 @@ const getCalendarClient = async (refreshToken) => {
         auth: google_1.oauth2Client,
     });
 };
+// ✅ FIX — sirf us specific admin ka token clear/disconnect karo jiska refreshToken
+// invalid nikla, na ki `updateMany({}, ...)` se sabhi admins ka. Saath hi
+// refreshToken bhi clear kiya taaki controllers ka `if (admin?.googleCalendar?.refreshToken)`
+// check false ho jaye aur dobara-dobara retry na ho, log spam na ho.
+async function handleInvalidGrant(refreshToken) {
+    try {
+        await admin_model_1.default.findOneAndUpdate({ "googleCalendar.refreshToken": refreshToken }, {
+            $set: { "googleCalendar.isConnected": false },
+            $unset: { "googleCalendar.refreshToken": "" },
+        });
+        console.log("Google Calendar: invalid/expired refresh token cleared for affected admin");
+    }
+    catch (cleanupErr) {
+        console.error("Failed to clear invalid Google refresh token:", cleanupErr);
+    }
+}
+function isInvalidGrantError(err) {
+    return (err?.message?.includes("invalid_grant") ||
+        err?.response?.data?.error === "invalid_grant");
+}
 const createCalendarEvent = async (refreshToken, lead) => {
     try {
         const calendar = await getCalendarClient(refreshToken);
@@ -37,7 +57,7 @@ ${lead.followUp?.message}
 
 `,
                 start: {
-                    dateTime: lead.followUp.date,
+                    dateTime: new Date(lead.followUp.date).toISOString(),
                     timeZone: "Asia/Kolkata",
                 },
                 end: {
@@ -64,12 +84,8 @@ ${lead.followUp?.message}
     }
     catch (err) {
         console.log("Google Calendar Error:", err?.message);
-        if (err?.message?.includes("invalid_grant")) {
-            await admin_model_1.default.updateMany({}, {
-                $set: {
-                    "googleCalendar.isConnected": false,
-                },
-            });
+        if (isInvalidGrantError(err)) {
+            await handleInvalidGrant(refreshToken);
         }
         throw err;
     }
@@ -78,6 +94,12 @@ exports.createCalendarEvent = createCalendarEvent;
 const updateCalendarEvent = async (refreshToken, eventId, lead) => {
     try {
         const calendar = await getCalendarClient(refreshToken);
+        // ✅ FIX — pehle .split('T')[0] se sirf date (e.g. "2026-07-23") bhej rahe the,
+        // jo `dateTime` field ke liye invalid hai (Google ko poora RFC3339 datetime
+        // chahiye). Ab poora ISO datetime bhejte hain, aur start/end alag time
+        // (30 min gap) rakhte hain — jaisa createCalendarEvent mein hai.
+        const startDateTime = new Date(lead.followUp.date).toISOString();
+        const endDateTime = new Date(new Date(lead.followUp.date).getTime() + 30 * 60000).toISOString();
         const response = await calendar.events.update({
             calendarId: "primary",
             eventId,
@@ -96,11 +118,11 @@ ${lead.followUp?.message}
 
 `,
                 start: {
-                    dateTime: new Date(lead.followUp.date).toISOString().split('T')[0],
+                    dateTime: startDateTime,
                     timeZone: "Asia/Kolkata",
                 },
                 end: {
-                    dateTime: new Date(lead.followUp.date).toISOString().split('T')[0],
+                    dateTime: endDateTime,
                     timeZone: "Asia/Kolkata",
                 },
             },
@@ -109,7 +131,11 @@ ${lead.followUp?.message}
         return response.data;
     }
     catch (err) {
-        console.log("UPDATE ERROR:", err);
+        console.log("UPDATE ERROR:", err?.message ?? err);
+        // ✅ FIX — invalid_grant handling yahan bhi add ki, pehle missing thi
+        if (isInvalidGrantError(err)) {
+            await handleInvalidGrant(refreshToken);
+        }
         throw err;
     }
 };
@@ -125,7 +151,11 @@ const deleteCalendarEvent = async (refreshToken, eventId) => {
         return true;
     }
     catch (err) {
-        console.log("DELETE ERROR:", err);
+        console.log("DELETE ERROR:", err?.message ?? err);
+        // ✅ FIX — invalid_grant handling yahan bhi add ki, pehle missing thi
+        if (isInvalidGrantError(err)) {
+            await handleInvalidGrant(refreshToken);
+        }
         throw err;
     }
 };

@@ -235,6 +235,7 @@
 //     return res.status(500).json({ success: false, error: "Server error" });
 //   }
 // };
+
 import { Request, Response } from "express";
 import Lead from "../models/lead.model";
 import FollowUpLog from "../models/followupLog.model";
@@ -386,7 +387,7 @@ export const listFollowUps = async (_req: Request, res: Response) => {
       "followUp.active": true,
       "followUp.date": { $ne: null },
     })
-      .select("fullName phone email followUp note")
+      .select("fullName phone email followUp note assignedTo assignedBy")
       .sort({ "followUp.date": 1 });
 
     return res.json({ success: true, data: followUps });
@@ -420,7 +421,7 @@ export const getUpcomingFollowUps = async (req: Request, res: Response) => {
     }
 
     const leads = await Lead.find(filter)
-      .select("fullName phone email followUp note")
+      .select("fullName phone email followUp note assignedTo assignedBy")
       .sort({ "followUp.date": 1 })
       .lean();
 
@@ -452,7 +453,7 @@ export const getDueFollowUps = async (_req: Request, res: Response) => {
       "followUp.active": true,
       "followUp.date": { $gte: startOfDay, $lte: endOfDay },
     })
-      .select("fullName phone email followUp note")
+      .select("fullName phone email followUp note assignedTo assignedBy")
       .sort({ "followUp.date": 1 });
 
     return res.json({ success: true, data: due });
@@ -471,7 +472,7 @@ export const getOverdueFollowUps = async (_req: Request, res: Response) => {
       "followUp.date": { $lt: now },
       "followUp.overdueStatus": { $ne: "resolved" },
     })
-      .select("fullName phone email followUp note status createdAt")
+      .select("fullName phone email followUp note assignedTo assignedBy status createdAt")
       .sort({ "followUp.date": 1 });
 
     const data = overdue.map((lead) => {

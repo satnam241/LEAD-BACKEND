@@ -60,7 +60,8 @@ function extractFields(rawData) {
 // ── Create Lead ───────────────────────────────────────────────────────────────
 const createLeadController = async (req, res) => {
     try {
-        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, rawData, message: bodyMessage, } = req.body;
+        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, rawData, message: bodyMessage, assignedTo, assignedBy, // 🆕
+         } = req.body;
         const extracted = extractFields(rawData || {});
         const fullName = bodyFullName || extracted.fullName || "Unknown User";
         const email = bodyEmail || extracted.email || null;
@@ -87,6 +88,8 @@ const createLeadController = async (req, res) => {
             whenAreYouPlanningToPurchase: finalTimeline,
             whatIsYourBudget: finalBudget,
             message, source,
+            assignedTo: assignedTo || null,
+            assignedBy: assignedBy || null,
             // ✅ FIX: top-level extraFields bhi set kiya — pehle sirf rawData ke andar tha
             extraFields: extracted.extraFields,
             rawData: {
