@@ -151,6 +151,8 @@
 // LeadSchema.index({ phone: 1, email: 1 });
 
 // export default mongoose.model<ILead>("Lead", LeadSchema);
+
+
 import mongoose, { Schema, Document, Query } from "mongoose";
 
 export interface ILead extends Document {

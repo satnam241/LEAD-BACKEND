@@ -60,8 +60,8 @@ function extractFields(rawData) {
 // ── Create Lead ───────────────────────────────────────────────────────────────
 const createLeadController = async (req, res) => {
     try {
-        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, rawData, message: bodyMessage, assignedTo, assignedBy, // 🆕
-         } = req.body;
+        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, rawData, message: bodyMessage, note: bodyNote, // ✅ FIX — add kiya
+        assignedTo, assignedBy, } = req.body;
         const extracted = extractFields(rawData || {});
         const fullName = bodyFullName || extracted.fullName || "Unknown User";
         const email = bodyEmail || extracted.email || null;
@@ -88,15 +88,11 @@ const createLeadController = async (req, res) => {
             whenAreYouPlanningToPurchase: finalTimeline,
             whatIsYourBudget: finalBudget,
             message, source,
+            note: bodyNote || null, // ✅ FIX — add kiya
             assignedTo: assignedTo || null,
             assignedBy: assignedBy || null,
-            // ✅ FIX: top-level extraFields bhi set kiya — pehle sirf rawData ke andar tha
             extraFields: extracted.extraFields,
-            rawData: {
-                ...rawData,
-                extractedMessage: message,
-                extraFields: extracted.extraFields,
-            },
+            rawData: { ...rawData, extractedMessage: message, extraFields: extracted.extraFields },
         });
         await lead.save();
         console.log("🆕 New Lead Created:", String(lead._id));
@@ -123,17 +119,21 @@ const updateLeadController = async (req, res) => {
     try {
         const { id } = req.params;
         const updates = { ...req.body };
-        // ✅ FIX: Status always lowercase mein store karo
-        // 'Negotiation' → 'negotiation', 'Visitor' → 'visitor'
         if (updates.status) {
             updates.status = updates.status.toLowerCase();
         }
         const existingLead = await lead_model_1.default.findById(id);
         if (!existingLead)
             return res.status(404).json({ error: "Lead not found" });
+        // ✅ FIX — note update hone par followUp.message bhi sync karo
+        const followUpSync = {};
+        if (Object.prototype.hasOwnProperty.call(updates, "note")) {
+            followUpSync["followUp.message"] = updates.note;
+        }
         const updatedLead = await lead_model_1.default.findByIdAndUpdate(id, {
             $set: {
                 ...updates,
+                ...followUpSync,
                 rawData: updates.rawData
                     ? {
                         ...existingLead.rawData,
@@ -146,7 +146,6 @@ const updateLeadController = async (req, res) => {
                     : existingLead.rawData,
             },
         }, { new: true });
-        console.log("✅ Lead updated:", String(updatedLead?._id));
         return res.status(200).json({ success: true, lead: updatedLead, data: updatedLead });
     }
     catch (err) {

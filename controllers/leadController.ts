@@ -598,8 +598,9 @@ export const createLeadController = async (req: Request, res: Response) => {
       source:   bodySource,
       rawData,
       message:  bodyMessage,
-      assignedTo, 
-      assignedBy,  // 🆕
+      note:     bodyNote,        // ✅ FIX — add kiya
+      assignedTo,
+      assignedBy,
     } = req.body;
 
     const extracted = extractFields(rawData || {});
@@ -631,23 +632,18 @@ export const createLeadController = async (req: Request, res: Response) => {
     if (!fullName && !email && !phone)
       return res.status(400).json({ error: "Lead must include at least one of: fullName, email, or phone." });
 
-    const lead = new Lead({
+     const lead = new Lead({
       fullName, email, phone,
       phoneVerified: phoneVerified || false,
       whenAreYouPlanningToPurchase: finalTimeline,
       whatIsYourBudget: finalBudget,
       message, source,
+      note: bodyNote || null,   // ✅ FIX — add kiya
       assignedTo: assignedTo || null,
       assignedBy: assignedBy || null,
-      // ✅ FIX: top-level extraFields bhi set kiya — pehle sirf rawData ke andar tha
       extraFields: extracted.extraFields,
-      rawData: {
-        ...rawData,
-        extractedMessage: message,
-        extraFields: extracted.extraFields,
-      },
+      rawData: { ...rawData, extractedMessage: message, extraFields: extracted.extraFields },
     });
-
     await lead.save();
     console.log("🆕 New Lead Created:", String(lead._id));
 
@@ -674,8 +670,6 @@ export const updateLeadController = async (req: Request, res: Response) => {
     const { id }    = req.params;
     const updates   = { ...req.body };
 
-    // ✅ FIX: Status always lowercase mein store karo
-    // 'Negotiation' → 'negotiation', 'Visitor' → 'visitor'
     if (updates.status) {
       updates.status = updates.status.toLowerCase();
     }
@@ -683,11 +677,18 @@ export const updateLeadController = async (req: Request, res: Response) => {
     const existingLead = await Lead.findById(id);
     if (!existingLead) return res.status(404).json({ error: "Lead not found" });
 
+    // ✅ FIX — note update hone par followUp.message bhi sync karo
+    const followUpSync: Record<string, any> = {};
+    if (Object.prototype.hasOwnProperty.call(updates, "note")) {
+      followUpSync["followUp.message"] = updates.note;
+    }
+
     const updatedLead = await Lead.findByIdAndUpdate(
       id,
       {
         $set: {
           ...updates,
+          ...followUpSync,
           rawData: updates.rawData
             ? {
                 ...existingLead.rawData,
@@ -703,7 +704,6 @@ export const updateLeadController = async (req: Request, res: Response) => {
       { new: true }
     );
 
-    console.log("✅ Lead updated:", String((updatedLead as any)?._id));
     return res.status(200).json({ success: true, lead: updatedLead, data: updatedLead });
   } catch (err) {
     console.error("💥 Error updateLeadController:", err);
