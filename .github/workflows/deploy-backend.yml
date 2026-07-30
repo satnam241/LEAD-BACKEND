@@ -12,22 +12,22 @@ jobs:
     steps:
       - name: Deploy Backend to VPS
         uses: appleboy/ssh-action@v1.2.0
-
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
-
           script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            nvm use 20
+
             cd /var/www/LEAD-BACKEND
 
             git pull origin main
-
             npm ci
-
             npm run build
 
-            pm2 restart api
-
+            pm2 restart backend
             pm2 save
