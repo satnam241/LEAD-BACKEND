@@ -1,47 +1,47 @@
 import { Request, Response } from 'express';
 import BotFlow, { FlowOption } from '../models/botFlow.model';
 
-const DEFAULT_SEEDED_STEPS = [
-  {
-    stepOrder: 1,
-    stepKey: 'property_interest',
-    question: 'Which property type interests you?',
-    options: [
-      {
-        id: '2bhk',
-        title: '2BHK Apartment',
-        detailText: '2BHK Apartments start from ₹45L, 900-1100 sq.ft, available in prime locations.',
-      },
-      {
-        id: '3bhk',
-        title: '3BHK Apartment',
-        detailText: '3BHK Apartments start from ₹75L, 1400-1700 sq.ft with modern amenities.',
-      },
-      {
-        id: 'villa',
-        title: 'Luxury Villa',
-        detailText: 'Luxury Villas start from ₹1.2Cr, 2400+ sq.ft with private garden.',
-      },
-      {
-        id: 'plot',
-        title: 'Residential Plot',
-        detailText: 'Gated community residential plots starting from ₹25L.',
-      },
-    ],
-    isActive: true,
-  },
-  {
-    stepOrder: 2,
-    stepKey: 'budget_range',
-    question: "What is your budget range?",
-    options: [
-      { id: 'under_50l', title: 'Under ₹50 Lakhs' },
-      { id: '50l_1cr', title: '₹50 Lakhs - ₹1 Crore' },
-      { id: 'above_1cr', title: 'Above ₹1 Crore' },
-    ],
-    isActive: true,
-  },
-];
+// const DEFAULT_SEEDED_STEPS = [
+//   {
+//     stepOrder: 1,
+//     stepKey: 'property_interest',
+//     question: 'Which property type interests you?',
+//     options: [
+//       {
+//         id: '2bhk',
+//         title: '2BHK Apartment',
+//         detailText: '2BHK Apartments start from ₹45L, 900-1100 sq.ft, available in prime locations.',
+//       },
+//       {
+//         id: '3bhk',
+//         title: '3BHK Apartment',
+//         detailText: '3BHK Apartments start from ₹75L, 1400-1700 sq.ft with modern amenities.',
+//       },
+//       {
+//         id: 'villa',
+//         title: 'Luxury Villa',
+//         detailText: 'Luxury Villas start from ₹1.2Cr, 2400+ sq.ft with private garden.',
+//       },
+//       {
+//         id: 'plot',
+//         title: 'Residential Plot',
+//         detailText: 'Gated community residential plots starting from ₹25L.',
+//       },
+//     ],
+//     isActive: true,
+//   },
+//   {
+//     stepOrder: 2,
+//     stepKey: 'budget_range',
+//     question: "What is your budget range?",
+//     options: [
+//       { id: 'under_50l', title: 'Under ₹50 Lakhs' },
+//       { id: '50l_1cr', title: '₹50 Lakhs - ₹1 Crore' },
+//       { id: 'above_1cr', title: 'Above ₹1 Crore' },
+//     ],
+//     isActive: true,
+//   },
+// ];
 
 // GET /api/bot-flow
 export async function getBotFlow(req: Request, res: Response): Promise<void> {
@@ -50,7 +50,7 @@ export async function getBotFlow(req: Request, res: Response): Promise<void> {
 
     // Auto-seed if empty so system works immediately
     if (!steps || steps.length === 0) {
-      await BotFlow.insertMany(DEFAULT_SEEDED_STEPS);
+      await BotFlow.insertMany("");
       steps = await BotFlow.find().sort({ stepOrder: 1 }).lean();
     }
 
