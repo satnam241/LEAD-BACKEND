@@ -17,17 +17,106 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: 22
+
           script: |
+            set -e
+
+            echo "======================================"
+            echo "🚀 Starting Backend Deployment"
+            echo "======================================"
+
+            # Load NVM
             export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+              source "$NVM_DIR/nvm.sh"
+            else
+              echo "❌ NVM not found"
+              exit 1
+            fi
 
             nvm use 20
 
+            echo "Node version:"
+            node -v
+
+            echo "NPM version:"
+            npm -v
+
+            # Go to backend
             cd /var/www/LEAD-BACKEND
 
-            git pull origin main
+            echo "======================================"
+            echo "📦 Updating Git Repository"
+            echo "======================================"
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "Current commit:"
+            git log -1 --oneline
+
+            echo "Git status:"
+            git status --short
+
+            echo "======================================"
+            echo "📦 Installing Dependencies"
+            echo "======================================"
+
             npm ci
+
+            echo "======================================"
+            echo "🔨 Building Backend"
+            echo "======================================"
+
             npm run build
 
-            pm2 restart backend
+            echo "======================================"
+            echo "♻️ Restarting PM2"
+            echo "======================================"
+
+            pm2 restart backend --update-env
+
             pm2 save
+
+            echo "======================================"
+            echo "⏳ Waiting for Backend"
+            echo "======================================"
+
+            sleep 3
+
+            echo "======================================"
+            echo "❤️ Health Check"
+            echo "======================================"
+
+            HEALTHY=false
+
+            for i in {1..15}; do
+              if curl --fail --silent http://127.0.0.1:4520/health; then
+                echo ""
+                echo "✅ Backend is healthy"
+                HEALTHY=true
+                break
+              fi
+
+              echo "Backend not ready yet... attempt $i/15"
+              sleep 2
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "❌ Backend health check failed"
+              echo ""
+              echo "===== PM2 STATUS ====="
+              pm2 status
+
+              echo ""
+              echo "===== PM2 LOGS ====="
+              pm2 logs backend --lines 50 --nostream
+
+              exit 1
+            fi
+
+            echo ""
+            echo "======================================"
+            echo "🎉 Backend Deployment Successful"
+            echo "======================================"
