@@ -16,18 +16,18 @@ const campaign_model_1 = __importDefault(require("../models/campaign.model"));
 const botFlow_model_1 = __importDefault(require("../models/botFlow.model"));
 const baileysService_1 = require("./baileysService");
 const lead_model_1 = __importDefault(require("../models/lead.model"));
-const FALLBACK_TEXT = "Please choose an option below or reply with the number (e.g. 1, 2, 3):";
+const FALLBACK_TEXT = "Please tap an option button or reply with your choice:";
 const COMPLETION_TEXT = "Thanks! We've noted your preferences — our property advisory team will contact you shortly.";
 const READ_TRIGGER_DELAY_MS = 2500;
-// Format question and numbered options for fallback/logging
+// Format question and button options for fallback/logging
 function renderStepAsText(question, options) {
-    const optionLines = options.map((o, i) => `${i + 1}. ${o.title}`).join('\n');
-    return `${question}\n\n${optionLines}\n\nReply with the number or title of your choice.`;
+    const optionLines = options.map((o) => `🔘 [ ${o.title} ]`).join('\n');
+    return `${question}\n\n${optionLines}\n\nTap an option or reply with your choice.`;
 }
 // Send question with interactive buttons (WhatsApp UI)
 async function sendStepQuestion(phone, step, isFirstStep = false) {
     const header = isFirstStep ? "Real Estate Assistant 🏡👋" : undefined;
-    return (0, baileysService_1.sendInteractiveButtons)(phone, step.question, step.options, header, 'Tap an option below or reply with number/name');
+    return (0, baileysService_1.sendInteractiveButtons)(phone, step.question, step.options, header, 'Tap an option button below');
 }
 // Robust option matching by number (1, 2, 3) or by option title/keywords or option id
 function matchOption(options, replyText) {
@@ -135,21 +135,10 @@ const DEFAULT_SEEDED_STEPS = [
     },
 ];
 async function getActiveFlowSteps() {
-    let steps = await botFlow_model_1.default.find({ isActive: true }).sort({ stepOrder: 1 }).lean();
-    if (!steps || steps.length === 0) {
-        steps = await botFlow_model_1.default.find().sort({ stepOrder: 1 }).lean();
-    }
-    if (!steps || steps.length === 0) {
-        console.log('[Chatbot] ⚡ Auto-seeding default bot flow steps into database...');
-        try {
-            await botFlow_model_1.default.insertMany(DEFAULT_SEEDED_STEPS);
-            steps = await botFlow_model_1.default.find({ isActive: true }).sort({ stepOrder: 1 }).lean();
-        }
-        catch {
-            return DEFAULT_SEEDED_STEPS;
-        }
-    }
-    return steps;
+    const steps = await botFlow_model_1.default.find({ isActive: true }).sort({ stepOrder: 1 }).lean();
+    if (steps && steps.length > 0) return steps;
+    const anySteps = await botFlow_model_1.default.find().sort({ stepOrder: 1 }).lean();
+    return anySteps || [];
 }
 function registerChatbot() {
     console.log('[Chatbot] 🤖 Initializing Chatbot listeners for Delivery, Read, and Incoming messages...');

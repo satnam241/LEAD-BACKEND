@@ -53,13 +53,8 @@ const DEFAULT_SEEDED_STEPS = [
 // GET /api/bot-flow
 async function getBotFlow(req, res) {
     try {
-        let steps = await botFlow_model_1.default.find().sort({ stepOrder: 1 }).lean();
-        // Auto-seed if empty so system works immediately
-        if (!steps || steps.length === 0) {
-            await botFlow_model_1.default.insertMany(DEFAULT_SEEDED_STEPS);
-            steps = await botFlow_model_1.default.find().sort({ stepOrder: 1 }).lean();
-        }
-        res.json(steps);
+        const steps = await botFlow_model_1.default.find().sort({ stepOrder: 1 }).lean();
+        res.json(steps || []);
     }
     catch (err) {
         res.status(500).json({

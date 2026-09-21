@@ -358,7 +358,7 @@ export async function sendInteractiveButtons(
     return { success: false, error: 'Invalid recipient phone number' };
   }
 
-  // Fallback text generator: Clean button card representation
+  // Fallback text generator: Clean button-style card representation
   const formatButtonText = () => {
     const lines: string[] = [];
     if (headerText?.trim()) {
@@ -367,11 +367,11 @@ export async function sendInteractiveButtons(
     }
     lines.push(bodyText.trim());
     lines.push('');
-    options.forEach((opt, idx) => {
-      lines.push(`🔘 *[ ${idx + 1} ]* ${opt.title}`);
+    options.forEach(opt => {
+      lines.push(`🔘 [ ${opt.title} ]`);
     });
     lines.push('');
-    lines.push(footerText?.trim() ? `_${footerText.trim()}_` : `_Reply with the number (e.g. 1, 2) or option name_`);
+    lines.push(footerText?.trim() ? `_${footerText.trim()}_` : `_Tap an option button or reply with your choice_`);
     return lines.join('\n');
   };
 
@@ -382,15 +382,15 @@ export async function sendInteractiveButtons(
       name: 'quick_reply',
       buttonParamsJson: JSON.stringify({
         display_text: opt.title,
-        id: opt.id || String(index + 1),
+        id: opt.id || `btn_${index + 1}`,
       }),
     }));
 
     const interactiveMessage = proto.Message.InteractiveMessage.create({
-      body: proto.Message.InteractiveMessage.Body.create({ text: bodyText }),
-      footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText || 'Select an option below' }),
+      body: proto.Message.InteractiveMessage.Body.create({ text: bodyText.trim() }),
+      footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText?.trim() || 'Select an option below' }),
       header: proto.Message.InteractiveMessage.Header.create({
-        title: headerText || 'Real Estate Bot 🏡',
+        title: headerText?.trim() || 'Real Estate Bot 🏡',
         hasMediaAttachment: false,
       }),
       nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
@@ -403,18 +403,36 @@ export async function sendInteractiveButtons(
       {
         viewOnceMessage: {
           message: {
-            messageContextInfo: {
-              deviceListMetadata: {},
-              deviceListMetadataVersion: 2,
-            },
             interactiveMessage,
           },
         },
       },
-      { userJid: sock.user?.id || '' }
+      { userJid: jid }
     );
 
-    await sock.relayMessage(jid, msg.message!, { messageId: msg.key.id! });
+    const additionalNodes = [
+      {
+        tag: 'biz',
+        attrs: {
+          actual_actors: '2',
+          host_storage: '2',
+          privacy_mode_ts: String(Math.floor(Date.now() / 1e3)),
+        },
+        content: [
+          {
+            tag: 'interactive',
+            attrs: { type: 'native_flow', v: '1' },
+            content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+          },
+        ],
+      },
+    ];
+
+    await sock.relayMessage(jid, msg.message!, {
+      messageId: msg.key.id!,
+      additionalNodes,
+    });
+
     console.log(`[Baileys] ✅ Native interactive buttons sent successfully to ${jid} (ID: ${msg.key.id})`);
     return { success: true, waMessageId: msg.key.id ?? undefined };
   } catch (nativeErr: any) {

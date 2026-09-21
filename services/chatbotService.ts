@@ -13,16 +13,16 @@ import {
 import LeadModel, { ILead } from '../models/lead.model';
 
 const FALLBACK_TEXT =
-  "Please choose an option below or reply with the number (e.g. 1, 2, 3):";
+  "Please tap an option button or reply with your choice:";
 const COMPLETION_TEXT =
   "Thanks! We've noted your preferences — our property advisory team will contact you shortly.";
 
 const READ_TRIGGER_DELAY_MS = 2500;
 
-// Format question and numbered options for fallback/logging
+// Format question and button options for fallback/logging
 export function renderStepAsText(question: string, options: FlowOption[]): string {
-  const optionLines = options.map((o, i) => `${i + 1}. ${o.title}`).join('\n');
-  return `${question}\n\n${optionLines}\n\nReply with the number or title of your choice.`;
+  const optionLines = options.map(o => `🔘 [ ${o.title} ]`).join('\n');
+  return `${question}\n\n${optionLines}\n\nTap an option or reply with your choice.`;
 }
 
 // Send question with interactive buttons (WhatsApp UI)
@@ -37,7 +37,7 @@ export async function sendStepQuestion(
     step.question,
     step.options,
     header,
-    'Tap an option below or reply with number/name'
+    'Tap an option button below'
   );
 }
 
@@ -160,20 +160,10 @@ const DEFAULT_SEEDED_STEPS = [
 ];
 
 async function getActiveFlowSteps() {
-  let steps = await BotFlow.find({ isActive: true }).sort({ stepOrder: 1 }).lean();
-  if (!steps || steps.length === 0) {
-    steps = await BotFlow.find().sort({ stepOrder: 1 }).lean();
-  }
-  if (!steps || steps.length === 0) {
-    console.log('[Chatbot] ⚡ Auto-seeding default bot flow steps into database...');
-    try {
-      await BotFlow.insertMany(DEFAULT_SEEDED_STEPS);
-      steps = await BotFlow.find({ isActive: true }).sort({ stepOrder: 1 }).lean();
-    } catch {
-      return DEFAULT_SEEDED_STEPS as any;
-    }
-  }
-  return steps;
+  const steps = await BotFlow.find({ isActive: true }).sort({ stepOrder: 1 }).lean();
+  if (steps && steps.length > 0) return steps;
+  const anySteps = await BotFlow.find().sort({ stepOrder: 1 }).lean();
+  return anySteps || [];
 }
 
 export function registerChatbot(): void {

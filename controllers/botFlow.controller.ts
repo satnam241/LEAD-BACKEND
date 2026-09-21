@@ -46,15 +46,8 @@ import BotFlow, { FlowOption } from '../models/botFlow.model';
 // GET /api/bot-flow
 export async function getBotFlow(req: Request, res: Response): Promise<void> {
   try {
-    let steps = await BotFlow.find().sort({ stepOrder: 1 }).lean();
-
-    // Auto-seed if empty so system works immediately
-    if (!steps || steps.length === 0) {
-      await BotFlow.insertMany("");
-      steps = await BotFlow.find().sort({ stepOrder: 1 }).lean();
-    }
-
-    res.json(steps);
+    const steps = await BotFlow.find().sort({ stepOrder: 1 }).lean();
+    res.json(steps || []);
   } catch (err) {
     res.status(500).json({
       message: 'Failed to fetch bot flow steps',
