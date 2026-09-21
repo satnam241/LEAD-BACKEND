@@ -151,6 +151,8 @@ export const adminGetLeads = async (req: Request, res: Response) => {
       search,
       dateFrom,
       dateTo,
+      interest,
+      interestLevel,
     } = req.query as Record<string, string>;
 
     const filter: Record<string, any> = { isDeleted: false };
@@ -159,6 +161,33 @@ export const adminGetLeads = async (req: Request, res: Response) => {
     if (status) filter.status = status.toLowerCase();
 
     if (source) filter.source = source;
+
+    // 🎯 Filter by Lead Temperature (Hot, Warm, Cold)
+    const rawInterest = (interest || interestLevel || "").toLowerCase().trim();
+    if (rawInterest && rawInterest !== "all" && ["hot", "warm", "cold"].includes(rawInterest)) {
+      let matchedLeadIds: any[] = [];
+      try {
+        const ConversationState = (await import("../models/conversationState.model")).default;
+        const states = await ConversationState.find().lean();
+        for (const s of states) {
+          const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 2) ? 'hot' : 'warm';
+          if (comp === rawInterest && s.leadId) {
+            matchedLeadIds.push(s.leadId);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      if (matchedLeadIds.length > 0) {
+        filter.$or = [
+          { interestLevel: rawInterest },
+          { _id: { $in: matchedLeadIds } },
+        ];
+      } else {
+        filter.interestLevel = rawInterest;
+      }
+    }
 
     if (search) {
       const q = search.trim();
@@ -228,10 +257,15 @@ export const adminGetLeads = async (req: Request, res: Response) => {
 // ── Export Leads ──────────────────────────────────────────────────────────────
 export const adminExportLeads = async (req: Request, res: Response) => {
   try {
-    const { format = "xlsx", status } = req.query as Record<string, string>;
+    const { format = "xlsx", status, interest, interestLevel } = req.query as Record<string, string>;
 
     const filter: Record<string, any> = { isDeleted: false };
     if (status && status !== "all") filter.status = status.toLowerCase();
+
+    const rawInterest = (interest || interestLevel || "").toLowerCase().trim();
+    if (rawInterest && rawInterest !== "all" && ["hot", "warm", "cold"].includes(rawInterest)) {
+      filter.interestLevel = rawInterest;
+    }
 
     const leads = await Lead.find(filter).sort({ receivedAt: -1 });
 

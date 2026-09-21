@@ -60,7 +60,7 @@ function extractFields(rawData) {
 // ── Create Lead ───────────────────────────────────────────────────────────────
 const createLeadController = async (req, res) => {
     try {
-        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, rawData, message: bodyMessage, note: bodyNote, // ✅ FIX — add kiya
+        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, status: bodyStatus, followUp: bodyFollowUp, rawData, message: bodyMessage, note: bodyNote, // ✅ FIX — add kiya
         assignedTo, assignedBy, } = req.body;
         const extracted = extractFields(rawData || {});
         const fullName = bodyFullName || extracted.fullName || "Unknown User";
@@ -88,6 +88,8 @@ const createLeadController = async (req, res) => {
             whenAreYouPlanningToPurchase: finalTimeline,
             whatIsYourBudget: finalBudget,
             message, source,
+            status: bodyStatus ? String(bodyStatus).toLowerCase() : "new",
+            followUp: bodyFollowUp || undefined,
             note: bodyNote || null, // ✅ FIX — add kiya
             assignedTo: assignedTo || null,
             assignedBy: assignedBy || null,
@@ -110,7 +112,10 @@ const createLeadController = async (req, res) => {
     }
     catch (err) {
         console.error("💥 Error createLeadController:", err);
-        return res.status(500).json({ success: false, error: "Failed to create lead" });
+        return res.status(500).json({
+            success: false,
+            error: err.message || "Failed to create lead",
+        });
     }
 };
 exports.createLeadController = createLeadController;
@@ -216,7 +221,7 @@ exports.bulkRestoreLeadsController = bulkRestoreLeadsController;
 // ── Get Leads ─────────────────────────────────────────────────────────────────
 const getLeadsController = async (req, res) => {
     try {
-        const { id, email, phone, source, followupFilter } = req.query;
+        const { id, email, phone, source, followupFilter, interest, interestLevel } = req.query;
         if (id) {
             const lead = await lead_model_1.default.findById(id).lean();
             if (!lead)
@@ -230,6 +235,10 @@ const getLeadsController = async (req, res) => {
             filters.phone = String(phone).trim();
         if (source && source !== "null" && source !== "")
             filters.source = source;
+        const rawInterest = String(interest || interestLevel || "").toLowerCase().trim();
+        if (rawInterest && rawInterest !== "all" && ["hot", "warm", "cold"].includes(rawInterest)) {
+            filters.interestLevel = rawInterest;
+        }
         if (followupFilter) {
             const now = new Date();
             if (followupFilter === "today") {

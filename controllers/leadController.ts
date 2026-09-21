@@ -596,6 +596,8 @@ export const createLeadController = async (req: Request, res: Response) => {
       whenAreYouPlanningToPurchase,
       whatIsYourBudget,
       source:   bodySource,
+      status:   bodyStatus,
+      followUp: bodyFollowUp,
       rawData,
       message:  bodyMessage,
       note:     bodyNote,        // ✅ FIX — add kiya
@@ -638,6 +640,8 @@ export const createLeadController = async (req: Request, res: Response) => {
       whenAreYouPlanningToPurchase: finalTimeline,
       whatIsYourBudget: finalBudget,
       message, source,
+      status: bodyStatus ? String(bodyStatus).toLowerCase() : "new",
+      followUp: bodyFollowUp || undefined,
       note: bodyNote || null,   // ✅ FIX — add kiya
       assignedTo: assignedTo || null,
       assignedBy: assignedBy || null,
@@ -658,9 +662,12 @@ export const createLeadController = async (req: Request, res: Response) => {
     })();
 
     return res.status(201).json({ success: true, data: lead });
-  } catch (err) {
+  } catch (err: any) {
     console.error("💥 Error createLeadController:", err);
-    return res.status(500).json({ success: false, error: "Failed to create lead" });
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Failed to create lead",
+    });
   }
 };
 
@@ -778,7 +785,7 @@ export const bulkRestoreLeadsController = async (req: Request, res: Response) =>
 // ── Get Leads ─────────────────────────────────────────────────────────────────
 export const getLeadsController = async (req: Request, res: Response) => {
   try {
-    const { id, email, phone, source, followupFilter } = req.query;
+    const { id, email, phone, source, followupFilter, interest, interestLevel } = req.query;
 
     if (id) {
       const lead = await Lead.findById(id).lean();
@@ -790,6 +797,11 @@ export const getLeadsController = async (req: Request, res: Response) => {
     if (email  && email  !== "null" && email  !== "") filters.email  = String(email).trim().toLowerCase();
     if (phone  && phone  !== "null" && phone  !== "") filters.phone  = String(phone).trim();
     if (source && source !== "null" && source !== "") filters.source = source;
+
+    const rawInterest = String(interest || interestLevel || "").toLowerCase().trim();
+    if (rawInterest && rawInterest !== "all" && ["hot", "warm", "cold"].includes(rawInterest)) {
+      filters.interestLevel = rawInterest;
+    }
 
     if (followupFilter) {
       const now = new Date();

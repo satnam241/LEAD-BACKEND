@@ -192,6 +192,7 @@ export interface ILead extends Document {
   note?: string | null;
   assignedTo?: string | null;   
   assignedBy?: string | null;
+  interestLevel?: "hot" | "warm" | "cold" | null;
 }
 
 const LeadSchema = new Schema<ILead>(
@@ -209,6 +210,12 @@ const LeadSchema = new Schema<ILead>(
     note: { type: String, default: null, trim: true },
     assignedTo: { type: String, default: null, trim: true },
     assignedBy: { type: String, default: null, trim: true }, 
+    interestLevel: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
     extraFields: { type: Schema.Types.Mixed, default: {} },
     rawData: { type: Schema.Types.Mixed, default: {} },
     receivedAt: { type: Date, default: Date.now },
@@ -262,6 +269,5 @@ LeadSchema.pre(/^find/, function (this: Query<any, ILead>, next) {
 };
 
 LeadSchema.index({ createdAt: -1 });
-LeadSchema.index({ phone: 1, email: 1 });
 
 export default mongoose.model<ILead>("Lead", LeadSchema);

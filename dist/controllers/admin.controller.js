@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -135,13 +168,40 @@ exports.changePasswordLoggedIn = changePasswordLoggedIn;
 // ── Get All Leads ─────────────────────────────────────────────────────────────
 const adminGetLeads = async (req, res) => {
     try {
-        const { page = "1", limit = "10", status, source, search, dateFrom, dateTo, } = req.query;
+        const { page = "1", limit = "10", status, source, search, dateFrom, dateTo, interest, interestLevel, } = req.query;
         const filter = { isDeleted: false };
         // ✅ FIX: Status filter — accept any case, store lowercase
         if (status)
             filter.status = status.toLowerCase();
         if (source)
             filter.source = source;
+        // 🎯 Filter by Lead Temperature (Hot, Warm, Cold)
+        const rawInterest = (interest || interestLevel || "").toLowerCase().trim();
+        if (rawInterest && rawInterest !== "all" && ["hot", "warm", "cold"].includes(rawInterest)) {
+            let matchedLeadIds = [];
+            try {
+                const ConversationState = (await Promise.resolve().then(() => __importStar(require("../models/conversationState.model")))).default;
+                const states = await ConversationState.find().lean();
+                for (const s of states) {
+                    const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 2) ? 'hot' : 'warm';
+                    if (comp === rawInterest && s.leadId) {
+                        matchedLeadIds.push(s.leadId);
+                    }
+                }
+            }
+            catch (e) {
+                // ignore
+            }
+            if (matchedLeadIds.length > 0) {
+                filter.$or = [
+                    { interestLevel: rawInterest },
+                    { _id: { $in: matchedLeadIds } },
+                ];
+            }
+            else {
+                filter.interestLevel = rawInterest;
+            }
+        }
         if (search) {
             const q = search.trim();
             filter.$and = [
@@ -207,10 +267,14 @@ exports.adminGetLeads = adminGetLeads;
 // ── Export Leads ──────────────────────────────────────────────────────────────
 const adminExportLeads = async (req, res) => {
     try {
-        const { format = "xlsx", status } = req.query;
+        const { format = "xlsx", status, interest, interestLevel } = req.query;
         const filter = { isDeleted: false };
         if (status && status !== "all")
             filter.status = status.toLowerCase();
+        const rawInterest = (interest || interestLevel || "").toLowerCase().trim();
+        if (rawInterest && rawInterest !== "all" && ["hot", "warm", "cold"].includes(rawInterest)) {
+            filter.interestLevel = rawInterest;
+        }
         const leads = await lead_model_1.default.find(filter).sort({ receivedAt: -1 });
         if (!leads.length)
             return res.status(404).json({ success: false, error: "No leads found" });
