@@ -24,6 +24,8 @@ import templateRoutes from './routes/template.routes';
 import leadInterestRoutes from './routes/leadInterest.routes';
 import baileysRoutes from './routes/baileys.routes';
 import botFlowRoutes from './routes/botFlow.routes';
+import { getNotifications } from "./controllers/admin.controller";
+import { adminAuth } from "./middleware/adminAuth";
 
 import path from "path";
 import fs from "fs";
@@ -68,6 +70,7 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/lead-interest', leadInterestRoutes);
 app.use('/api/baileys', baileysRoutes);
 app.use('/api/bot-flow', botFlowRoutes);
+app.get('/api/notifications', adminAuth, getNotifications);
 
 // ✅ PROPER SERVER START
 const startServer = async () => {

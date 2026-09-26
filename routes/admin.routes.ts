@@ -126,6 +126,7 @@ import {
   adminUpdateLead,
   adminDeleteLead,
   adminDailyStats,
+  adminStatsSummary,
   adminAdvancedMonthlyReport,
   adminExportLeads,
   forgotPassword,
@@ -163,6 +164,7 @@ router.get ("/leads/export",  adminAuth, adminExportLeads);
 
 // ── Stats ─────────────────────────────────────────────────────────
 router.get("/stats/daily",    adminAuth, adminDailyStats);
+router.get("/stats/summary",  adminAuth, adminStatsSummary);
 router.get("/monthly-report", adminAuth, adminAdvancedMonthlyReport);
 router.get("/leads/monthly-report", adminExportMonthlyReport);
 

@@ -341,13 +341,24 @@ export const adminExportLeads = async (req: Request, res: Response) => {
 // ── Update Lead ───────────────────────────────────────────────────────────────
 export const adminUpdateLead = async (req: Request, res: Response) => {
   try {
-    const { id }    = req.params;
-    const { status } = req.body;
+    const { id } = req.params;
+    const { status, interestLevel, interest } = req.body;
 
-    if (!status) return res.status(400).json({ success: false, error: "Status is required" });
+    const setFields: Record<string, any> = {};
+    if (status) setFields.status = String(status).toLowerCase();
 
-    // ✅ FIX: lowercase mein store karo
-    const lead = await Lead.findByIdAndUpdate(id, { status: status.toLowerCase() }, { new: true });
+    if (interestLevel !== undefined || interest !== undefined) {
+      const raw = interestLevel !== undefined ? interestLevel : interest;
+      setFields.interestLevel = raw && ["hot", "warm", "cold"].includes(String(raw).toLowerCase().trim())
+        ? String(raw).toLowerCase().trim()
+        : null;
+    }
+
+    if (Object.keys(setFields).length === 0) {
+      return res.status(400).json({ success: false, error: "No fields provided to update" });
+    }
+
+    const lead = await Lead.findByIdAndUpdate(id, setFields, { new: true });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
 
     res.json({ success: true, lead });
@@ -389,6 +400,50 @@ export const adminDailyStats = async (_req: Request, res: Response) => {
     res.json({ success: true, stats });
   } catch (err) {
     console.error("Daily stats error:", err);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+// ── Stats Summary ─────────────────────────────────────────────────────────────
+export const adminStatsSummary = async (_req: Request, res: Response) => {
+  try {
+    const counts = await Lead.aggregate([
+      { $match: { isDeleted: false } },
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]);
+
+    const normalize = (s: string) => {
+      const lower = (s || "").toLowerCase();
+      if (lower === "new") return "New";
+      if (lower === "contacted") return "Contacted";
+      if (lower === "interested") return "Interested";
+      if (lower === "negotiation") return "Negotiation";
+      if (lower === "visitor") return "Visitor";
+      if (lower === "closed" || lower === "converted") return "Closed";
+      if (lower === "lost") return "Lost";
+      return "New";
+    };
+
+    const byStatus: Record<string, number> = {
+      New: 0,
+      Contacted: 0,
+      Interested: 0,
+      Negotiation: 0,
+      Visitor: 0,
+      Closed: 0,
+      Lost: 0,
+    };
+
+    let total = 0;
+    for (const c of counts) {
+      const key = normalize(c._id);
+      byStatus[key] = (byStatus[key] || 0) + c.count;
+      total += c.count;
+    }
+
+    res.json({ success: true, total, byStatus });
+  } catch (err) {
+    console.error("Stats summary error:", err);
     res.status(500).json({ success: false, error: "Server error" });
   }
 };

@@ -603,6 +603,8 @@ export const createLeadController = async (req: Request, res: Response) => {
       note:     bodyNote,        // ✅ FIX — add kiya
       assignedTo,
       assignedBy,
+      interestLevel: bodyInterestLevel,
+      interest: bodyInterest,
     } = req.body;
 
     const extracted = extractFields(rawData || {});
@@ -631,6 +633,11 @@ export const createLeadController = async (req: Request, res: Response) => {
 
     const source = bodySource || extracted.source || "import";
 
+    const rawInterest = bodyInterestLevel || bodyInterest || null;
+    const finalInterest = rawInterest && ["hot", "warm", "cold"].includes(String(rawInterest).toLowerCase().trim())
+      ? (String(rawInterest).toLowerCase().trim() as "hot" | "warm" | "cold")
+      : null;
+
     if (!fullName && !email && !phone)
       return res.status(400).json({ error: "Lead must include at least one of: fullName, email, or phone." });
 
@@ -641,6 +648,7 @@ export const createLeadController = async (req: Request, res: Response) => {
       whatIsYourBudget: finalBudget,
       message, source,
       status: bodyStatus ? String(bodyStatus).toLowerCase() : "new",
+      interestLevel: finalInterest,
       followUp: bodyFollowUp || undefined,
       note: bodyNote || null,   // ✅ FIX — add kiya
       assignedTo: assignedTo || null,
@@ -679,6 +687,13 @@ export const updateLeadController = async (req: Request, res: Response) => {
 
     if (updates.status) {
       updates.status = updates.status.toLowerCase();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, "interestLevel") || Object.prototype.hasOwnProperty.call(updates, "interest")) {
+      const raw = updates.interestLevel !== undefined ? updates.interestLevel : updates.interest;
+      updates.interestLevel = raw && ["hot", "warm", "cold"].includes(String(raw).toLowerCase().trim())
+        ? String(raw).toLowerCase().trim()
+        : null;
     }
 
     const existingLead = await Lead.findById(id);
