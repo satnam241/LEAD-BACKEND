@@ -26,6 +26,11 @@ const template_routes_1 = __importDefault(require("./routes/template.routes"));
 const leadInterest_routes_1 = __importDefault(require("./routes/leadInterest.routes"));
 const baileys_routes_1 = __importDefault(require("./routes/baileys.routes"));
 const botFlow_routes_1 = __importDefault(require("./routes/botFlow.routes"));
+const project_routes_1 = __importDefault(require("./routes/project.routes"));
+const fbForm_routes_1 = __importDefault(require("./routes/fbForm.routes"));
+const aiChat_routes_1 = __importDefault(require("./routes/aiChat.routes"));
+const admin_controller_1 = require("./controllers/admin.controller");
+const adminAuth_1 = require("./middleware/adminAuth");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const app = (0, express_1.default)();
@@ -63,6 +68,10 @@ app.use('/api/templates', template_routes_1.default);
 app.use('/api/lead-interest', leadInterest_routes_1.default);
 app.use('/api/baileys', baileys_routes_1.default);
 app.use('/api/bot-flow', botFlow_routes_1.default);
+app.use('/api/projects', project_routes_1.default);
+app.use('/api/fb-forms', fbForm_routes_1.default);
+app.use('/api/ai-chat', aiChat_routes_1.default);
+app.get('/api/notifications', adminAuth_1.adminAuth, admin_controller_1.getNotifications);
 // ✅ PROPER SERVER START
 const startServer = async () => {
     await (0, DB_1.connectDB)(); // DB ready hone do

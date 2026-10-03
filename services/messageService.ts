@@ -2,9 +2,11 @@
 
 import Lead from "../models/lead.model";
 import ScheduledMessage from "../models/scheduledMessage.model";
+import ConversationMessage from "../models/conversationMessage.model";
 import { sendEmail } from "./emailService";
 import { sendWhatsAppUnified } from "./whatsappService";
 import { getDefaultMessage } from "../utils/messageTemplates";
+import { learnFromAgentReply } from "./aiLearningService";
 
 export type MessageType = "email" | "whatsapp" | "both";
 
@@ -90,6 +92,17 @@ export const sendMessageToLead = async ({
   lead.status = "contacted";
 
   await lead.save();
+
+  // 🎓 Auto-learn from human agent manual message and append to conversation transcript
+  ConversationMessage.create({
+    leadId: lead._id,
+    phone: lead.phone || '',
+    role: 'assistant',
+    content: finalMessage,
+    createdAt: new Date(),
+  }).catch(() => {});
+
+  learnFromAgentReply(lead._id as any, finalMessage).catch(() => {});
 
   return {
     success: true,

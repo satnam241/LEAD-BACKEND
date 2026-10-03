@@ -522,6 +522,7 @@
 
 import express, { Request, Response } from "express";
 import Lead from "../models/lead.model";
+import FbForm from "../models/fbForm.model";
 import { normalizePhone } from "../services/phone";
 import fetchWithRetry from "../services/fetchWithRetry";
 import { sendMessageToLead } from "../services/messageService";
@@ -731,6 +732,33 @@ if (form_id) {
           : null;
 
         // ==========================================
+        // 📋 FB FORM CHECK & AUTO-REGISTER / PROJECT LOOKUP
+        // ==========================================
+        let matchedProjectId = null;
+        if (form_id) {
+          try {
+            let fbForm = await FbForm.findOne({ formId: form_id });
+            if (!fbForm) {
+              fbForm = await FbForm.create({
+                formId: form_id,
+                name: formName || 'Untitled Form',
+                locale: 'en_US',
+                status: 'ACTIVE',
+                projectId: null,
+                suggestedProject: null,
+                lastSyncedAt: new Date(),
+              });
+              console.log(`📋 Auto-registered new FB Form for mapping: ${form_id} (${formName || 'Untitled'})`);
+            }
+            if (fbForm.projectId) {
+              matchedProjectId = fbForm.projectId;
+            }
+          } catch (formErr: any) {
+            console.error('⚠️ Error checking/upserting FbForm in webhook:', formErr?.message || formErr);
+          }
+        }
+
+        // ==========================================
         // 🆕 ALWAYS CREATE NEW LEAD (NO DUPLICATE CHECK)
         // ==========================================
         const newLead = await Lead.create({
@@ -754,6 +782,8 @@ if (form_id) {
           formId: form_id,
 
           formName: formName,
+
+          projectId: matchedProjectId,
 
           extraFields: fields,
 

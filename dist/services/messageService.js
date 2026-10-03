@@ -7,9 +7,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.scheduleMessageToLead = exports.sendMessageToLead = void 0;
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const scheduledMessage_model_1 = __importDefault(require("../models/scheduledMessage.model"));
+const conversationMessage_model_1 = __importDefault(require("../models/conversationMessage.model"));
 const emailService_1 = require("./emailService");
 const whatsappService_1 = require("./whatsappService");
 const messageTemplates_1 = require("../utils/messageTemplates");
+const aiLearningService_1 = require("./aiLearningService");
 const sendMessageToLead = async ({ leadId, messageType, customMessage, adminEmail, }) => {
     const lead = await lead_model_1.default.findById(leadId);
     if (!lead)
@@ -75,6 +77,15 @@ const sendMessageToLead = async ({ leadId, messageType, customMessage, adminEmai
     lead.lastReminderSent = new Date();
     lead.status = "contacted";
     await lead.save();
+    // 🎓 Auto-learn from human agent manual message and append to conversation transcript
+    conversationMessage_model_1.default.create({
+        leadId: lead._id,
+        phone: lead.phone || '',
+        role: 'assistant',
+        content: finalMessage,
+        createdAt: new Date(),
+    }).catch(() => { });
+    (0, aiLearningService_1.learnFromAgentReply)(lead._id, finalMessage).catch(() => { });
     return {
         success: true,
         sentTo,

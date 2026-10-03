@@ -24,6 +24,9 @@ import templateRoutes from './routes/template.routes';
 import leadInterestRoutes from './routes/leadInterest.routes';
 import baileysRoutes from './routes/baileys.routes';
 import botFlowRoutes from './routes/botFlow.routes';
+import projectRoutes from './routes/project.routes';
+import fbFormRoutes from './routes/fbForm.routes';
+import aiChatRoutes from './routes/aiChat.routes';
 import { getNotifications } from "./controllers/admin.controller";
 import { adminAuth } from "./middleware/adminAuth";
 
@@ -70,6 +73,9 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/lead-interest', leadInterestRoutes);
 app.use('/api/baileys', baileysRoutes);
 app.use('/api/bot-flow', botFlowRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/fb-forms', fbFormRoutes);
+app.use('/api/ai-chat', aiChatRoutes);
 app.get('/api/notifications', adminAuth, getNotifications);
 
 // ✅ PROPER SERVER START

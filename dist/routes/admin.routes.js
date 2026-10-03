@@ -117,6 +117,7 @@ router.post("/import-leads", upload_1.upload.single("file"), admin_controller_1.
 router.get("/leads/export", adminAuth_1.adminAuth, admin_controller_1.adminExportLeads);
 // ── Stats ─────────────────────────────────────────────────────────
 router.get("/stats/daily", adminAuth_1.adminAuth, admin_controller_1.adminDailyStats);
+router.get("/stats/summary", adminAuth_1.adminAuth, admin_controller_1.adminStatsSummary);
 router.get("/monthly-report", adminAuth_1.adminAuth, admin_controller_1.adminAdvancedMonthlyReport);
 router.get("/leads/monthly-report", admin_controller_1.adminExportMonthlyReport);
 // ── Reminders ─────────────────────────────────────────────────────

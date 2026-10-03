@@ -166,6 +166,7 @@ const LeadSchema = new mongoose_1.Schema({
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
     formName: { type: String, default: null },
+    projectId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },

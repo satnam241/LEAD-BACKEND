@@ -163,6 +163,7 @@ export interface ILead extends Document {
   source?: string;
   formId?: string | null;
   formName?: string | null;
+  projectId?: mongoose.Types.ObjectId | null;
   whenAreYouPlanningToPurchase?: string | null;
   whatIsYourBudget?: string | null;
   message?: string;
@@ -204,6 +205,7 @@ const LeadSchema = new Schema<ILead>(
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
     formName: { type: String, default: null },
+    projectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },

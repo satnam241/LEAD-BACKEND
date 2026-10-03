@@ -47,15 +47,24 @@ export async function getStats(_req: Request, res: Response): Promise<void> {
 
 export async function getAudienceCounts(_req: Request, res: Response): Promise<void> {
   try {
+    const now = new Date();
     const entries = await Promise.all(
       Object.entries(audienceMap).map(async ([label, statusValue]) => {
         let count: number;
         if (label === 'Follow-up Leads') {
-          count = await Lead.countDocuments({ 'followUp.active': true } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ 'followUp.active': true, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+        } else if (label === 'Due Follow-up Leads') {
+          count = await Lead.countDocuments({ 'followUp.active': true, 'followUp.date': { $lte: now }, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+        } else if (label === 'Hot Leads') {
+          count = await Lead.countDocuments({ interestLevel: 'hot', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+        } else if (label === 'Warm Leads') {
+          count = await Lead.countDocuments({ interestLevel: 'warm', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+        } else if (label === 'Cold Leads') {
+          count = await Lead.countDocuments({ interestLevel: 'cold', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         } else if (statusValue === null) {
-          count = await Lead.countDocuments({});
+          count = await Lead.countDocuments({ isDeleted: { $ne: true } });
         } else {
-          count = await Lead.countDocuments({ status: statusValue } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ status: statusValue, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         }
         return [label, count] as const;
       })
@@ -89,10 +98,20 @@ export async function getCampaignById(req: Request, res: Response): Promise<void
 }
 
 async function resolveEligibleLeads(audience: string, filters: CampaignFilters): Promise<LeadLike[]> {
-  const query: FilterQuery<LeadLike> = {};
+  const query: FilterQuery<LeadLike> = { isDeleted: { $ne: true } };
+  const now = new Date();
 
   if (audience === 'Follow-up Leads') {
     (query as Record<string, unknown>)['followUp.active'] = true;
+  } else if (audience === 'Due Follow-up Leads') {
+    (query as Record<string, unknown>)['followUp.active'] = true;
+    (query as Record<string, unknown>)['followUp.date'] = { $lte: now };
+  } else if (audience === 'Hot Leads') {
+    (query as Record<string, unknown>).interestLevel = 'hot';
+  } else if (audience === 'Warm Leads') {
+    (query as Record<string, unknown>).interestLevel = 'warm';
+  } else if (audience === 'Cold Leads') {
+    (query as Record<string, unknown>).interestLevel = 'cold';
   } else {
     const statusValue = audienceMap[audience];
     if (statusValue !== null && statusValue !== undefined) query.status = statusValue;

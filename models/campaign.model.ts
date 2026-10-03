@@ -20,6 +20,7 @@ export interface CampaignDoc extends Document {
   sent: number;
   failed: number;
   status: CampaignStatus;
+  projectId?: Types.ObjectId | null;
   recipientStatuses: RecipientStatusDoc[];
   createdAt: Date;
   updatedAt: Date;
@@ -50,6 +51,7 @@ const campaignSchema = new Schema<CampaignDoc>(
     sent: { type: Number, default: 0 },
     failed: { type: Number, default: 0 },
     status: { type: String, enum: ['Draft', 'Running', 'Completed', 'Failed'], default: 'Draft' },
+    projectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     recipientStatuses: [recipientStatusSchema],
   },
   { timestamps: true }

@@ -17,6 +17,10 @@ export interface ConversationStateDoc extends Document {
   deliveryStatus?: 'sent' | 'delivered' | 'read' | 'replied';
   lastMessageFromUser?: string;
   lastMessageAt?: Date;
+  activeProjectId?: Types.ObjectId | null;
+  pendingProjectSwitchId?: Types.ObjectId | null;
+  aiPaused?: boolean;
+  needsAgent?: boolean;
   startedAt: Date;
   completedAt?: Date;
   lastActiveAt: Date;
@@ -48,6 +52,10 @@ const conversationStateSchema = new Schema<ConversationStateDoc>(
     },
     lastMessageFromUser: { type: String, default: null },
     lastMessageAt: { type: Date, default: null },
+    activeProjectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
+    pendingProjectSwitchId: { type: Schema.Types.ObjectId, ref: 'Project', default: null },
+    aiPaused: { type: Boolean, default: false },
+    needsAgent: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
     completedAt: Date,
     lastActiveAt: { type: Date, default: Date.now },

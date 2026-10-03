@@ -61,7 +61,7 @@ function extractFields(rawData) {
 const createLeadController = async (req, res) => {
     try {
         const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, status: bodyStatus, followUp: bodyFollowUp, rawData, message: bodyMessage, note: bodyNote, // ✅ FIX — add kiya
-        assignedTo, assignedBy, } = req.body;
+        assignedTo, assignedBy, interestLevel: bodyInterestLevel, interest: bodyInterest, } = req.body;
         const extracted = extractFields(rawData || {});
         const fullName = bodyFullName || extracted.fullName || "Unknown User";
         const email = bodyEmail || extracted.email || null;
@@ -80,6 +80,10 @@ const createLeadController = async (req, res) => {
             extracted.extraFields?.["when_are_you_planning_to_purchase_"] ||
             null;
         const source = bodySource || extracted.source || "import";
+        const rawInterest = bodyInterestLevel || bodyInterest || null;
+        const finalInterest = rawInterest && ["hot", "warm", "cold"].includes(String(rawInterest).toLowerCase().trim())
+            ? String(rawInterest).toLowerCase().trim()
+            : null;
         if (!fullName && !email && !phone)
             return res.status(400).json({ error: "Lead must include at least one of: fullName, email, or phone." });
         const lead = new lead_model_1.default({
@@ -89,6 +93,7 @@ const createLeadController = async (req, res) => {
             whatIsYourBudget: finalBudget,
             message, source,
             status: bodyStatus ? String(bodyStatus).toLowerCase() : "new",
+            interestLevel: finalInterest,
             followUp: bodyFollowUp || undefined,
             note: bodyNote || null, // ✅ FIX — add kiya
             assignedTo: assignedTo || null,
@@ -126,6 +131,12 @@ const updateLeadController = async (req, res) => {
         const updates = { ...req.body };
         if (updates.status) {
             updates.status = updates.status.toLowerCase();
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, "interestLevel") || Object.prototype.hasOwnProperty.call(updates, "interest")) {
+            const raw = updates.interestLevel !== undefined ? updates.interestLevel : updates.interest;
+            updates.interestLevel = raw && ["hot", "warm", "cold"].includes(String(raw).toLowerCase().trim())
+                ? String(raw).toLowerCase().trim()
+                : null;
         }
         const existingLead = await lead_model_1.default.findById(id);
         if (!existingLead)

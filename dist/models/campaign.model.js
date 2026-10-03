@@ -21,6 +21,7 @@ const campaignSchema = new mongoose_1.Schema({
     sent: { type: Number, default: 0 },
     failed: { type: Number, default: 0 },
     status: { type: String, enum: ['Draft', 'Running', 'Completed', 'Failed'], default: 'Draft' },
+    projectId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     recipientStatuses: [recipientStatusSchema],
 }, { timestamps: true });
 exports.default = (0, mongoose_1.model)('Campaign', campaignSchema);

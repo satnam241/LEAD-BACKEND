@@ -9,47 +9,47 @@ exports.updateBotFlowStep = updateBotFlowStep;
 exports.deleteBotFlowStep = deleteBotFlowStep;
 exports.reorderBotFlowSteps = reorderBotFlowSteps;
 const botFlow_model_1 = __importDefault(require("../models/botFlow.model"));
-const DEFAULT_SEEDED_STEPS = [
-    {
-        stepOrder: 1,
-        stepKey: 'property_interest',
-        question: 'Which property type interests you?',
-        options: [
-            {
-                id: '2bhk',
-                title: '2BHK Apartment',
-                detailText: '2BHK Apartments start from ₹45L, 900-1100 sq.ft, available in prime locations.',
-            },
-            {
-                id: '3bhk',
-                title: '3BHK Apartment',
-                detailText: '3BHK Apartments start from ₹75L, 1400-1700 sq.ft with modern amenities.',
-            },
-            {
-                id: 'villa',
-                title: 'Luxury Villa',
-                detailText: 'Luxury Villas start from ₹1.2Cr, 2400+ sq.ft with private garden.',
-            },
-            {
-                id: 'plot',
-                title: 'Residential Plot',
-                detailText: 'Gated community residential plots starting from ₹25L.',
-            },
-        ],
-        isActive: true,
-    },
-    {
-        stepOrder: 2,
-        stepKey: 'budget_range',
-        question: "What is your budget range?",
-        options: [
-            { id: 'under_50l', title: 'Under ₹50 Lakhs' },
-            { id: '50l_1cr', title: '₹50 Lakhs - ₹1 Crore' },
-            { id: 'above_1cr', title: 'Above ₹1 Crore' },
-        ],
-        isActive: true,
-    },
-];
+// const DEFAULT_SEEDED_STEPS = [
+//   {
+//     stepOrder: 1,
+//     stepKey: 'property_interest',
+//     question: 'Which property type interests you?',
+//     options: [
+//       {
+//         id: '2bhk',
+//         title: '2BHK Apartment',
+//         detailText: '2BHK Apartments start from ₹45L, 900-1100 sq.ft, available in prime locations.',
+//       },
+//       {
+//         id: '3bhk',
+//         title: '3BHK Apartment',
+//         detailText: '3BHK Apartments start from ₹75L, 1400-1700 sq.ft with modern amenities.',
+//       },
+//       {
+//         id: 'villa',
+//         title: 'Luxury Villa',
+//         detailText: 'Luxury Villas start from ₹1.2Cr, 2400+ sq.ft with private garden.',
+//       },
+//       {
+//         id: 'plot',
+//         title: 'Residential Plot',
+//         detailText: 'Gated community residential plots starting from ₹25L.',
+//       },
+//     ],
+//     isActive: true,
+//   },
+//   {
+//     stepOrder: 2,
+//     stepKey: 'budget_range',
+//     question: "What is your budget range?",
+//     options: [
+//       { id: 'under_50l', title: 'Under ₹50 Lakhs' },
+//       { id: '50l_1cr', title: '₹50 Lakhs - ₹1 Crore' },
+//       { id: 'above_1cr', title: 'Above ₹1 Crore' },
+//     ],
+//     isActive: true,
+//   },
+// ];
 // GET /api/bot-flow
 async function getBotFlow(req, res) {
     try {

@@ -421,6 +421,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // export default router;
 const express_1 = __importDefault(require("express"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
+const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
 const phone_1 = require("../services/phone");
 const fetchWithRetry_1 = __importDefault(require("../services/fetchWithRetry"));
 const messageService_1 = require("../services/messageService");
@@ -565,6 +566,33 @@ router.post("/facebook", async (req, res) => {
                     ? (0, phone_1.normalizePhone)(rawPhone)
                     : null;
                 // ==========================================
+                // 📋 FB FORM CHECK & AUTO-REGISTER / PROJECT LOOKUP
+                // ==========================================
+                let matchedProjectId = null;
+                if (form_id) {
+                    try {
+                        let fbForm = await fbForm_model_1.default.findOne({ formId: form_id });
+                        if (!fbForm) {
+                            fbForm = await fbForm_model_1.default.create({
+                                formId: form_id,
+                                name: formName || 'Untitled Form',
+                                locale: 'en_US',
+                                status: 'ACTIVE',
+                                projectId: null,
+                                suggestedProject: null,
+                                lastSyncedAt: new Date(),
+                            });
+                            console.log(`📋 Auto-registered new FB Form for mapping: ${form_id} (${formName || 'Untitled'})`);
+                        }
+                        if (fbForm.projectId) {
+                            matchedProjectId = fbForm.projectId;
+                        }
+                    }
+                    catch (formErr) {
+                        console.error('⚠️ Error checking/upserting FbForm in webhook:', formErr?.message || formErr);
+                    }
+                }
+                // ==========================================
                 // 🆕 ALWAYS CREATE NEW LEAD (NO DUPLICATE CHECK)
                 // ==========================================
                 const newLead = await lead_model_1.default.create({
@@ -579,6 +607,7 @@ router.post("/facebook", async (req, res) => {
                     source: "facebook",
                     formId: form_id,
                     formName: formName,
+                    projectId: matchedProjectId,
                     extraFields: fields,
                     rawData: leadData,
                     status: "new",

@@ -10,6 +10,7 @@ import P from 'pino';
 import QRCode from 'qrcode';
 import path from 'path';
 import fs from 'fs';
+import axios from 'axios';
 
 const AUTH_FOLDER = process.env.BAILEYS_AUTH_FOLDER || path.join(process.cwd(), 'auth_info_baileys');
 
@@ -122,7 +123,7 @@ export function normalizePhone(raw: string): string {
 export function toJid(phone: string): string {
   if (!phone) return '';
   const digits = normalizePhone(phone);
-  if (!digits) return '';
+  if (!digits || digits.length < 10 || /^0+$/.test(digits)) return '';
   return `${digits}@s.whatsapp.net`;
 }
 
@@ -339,6 +340,18 @@ export async function sendText(
   }
 }
 
+export async function sendTyping(phone: string, state: 'composing' | 'paused' = 'composing'): Promise<void> {
+  if (!sock || connectionStatus !== 'open') return;
+  const jid = toJid(phone);
+  if (!jid) return;
+
+  try {
+    await sock.sendPresenceUpdate(state, jid);
+  } catch (err: any) {
+    console.warn(`[Baileys] ⚠️ Failed to update presence (${state}) for ${jid}:`, err?.message || err);
+  }
+}
+
 export async function sendInteractiveButtons(
   phone: string,
   bodyText: string,
@@ -442,6 +455,74 @@ export async function sendInteractiveButtons(
   }
 }
 
+/**
+ * Resolves mediaUrl to either a local Buffer from disk, a downloaded Buffer via axios,
+ * or fallback { url } object.
+ */
+async function resolveMediaPayload(mediaUrl: string): Promise<Buffer | { url: string }> {
+  try {
+    const cleanUrl = mediaUrl.trim();
+
+    // 1. If mediaUrl contains /public/uploads/ or starts with /public/
+    let filename = '';
+    if (cleanUrl.includes('/public/uploads/')) {
+      const parts = cleanUrl.split('/public/uploads/');
+      filename = parts[1]?.split('?')[0]?.split('#')[0] || '';
+    } else if (cleanUrl.startsWith('/public/') || cleanUrl.startsWith('public/')) {
+      filename = path.basename(cleanUrl.split('?')[0]);
+    }
+
+    if (filename) {
+      const possibleDirs = [
+        path.join(process.cwd(), 'public', 'uploads'),
+        path.resolve(__dirname, '..', 'public', 'uploads'),
+        path.resolve(__dirname, '..', '..', 'public', 'uploads'),
+        path.resolve(process.cwd(), '..', 'LEAD-BACKEND - Copy', 'public', 'uploads'),
+        path.resolve(process.cwd(), '..', 'LEAD-BACKEND', 'public', 'uploads'),
+      ];
+
+      for (const dir of possibleDirs) {
+        const candidate = path.join(dir, filename);
+        if (fs.existsSync(candidate)) {
+          console.log(`[Baileys] 📂 Found local image on disk: ${candidate}`);
+          return fs.readFileSync(candidate);
+        }
+      }
+    }
+
+    // 2. Direct absolute or relative path check
+    if (fs.existsSync(cleanUrl)) {
+      console.log(`[Baileys] 📂 Loading image from direct file path: ${cleanUrl}`);
+      return fs.readFileSync(cleanUrl);
+    }
+
+    // 3. For HTTP/HTTPS URLs, download buffer directly with axios
+    // This avoids Baileys internal stream fetch failures on localhost or external hosts
+    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+      try {
+        console.log(`[Baileys] 🌐 Pre-fetching media buffer via HTTP: ${cleanUrl}`);
+        const res = await axios.get(cleanUrl, {
+          responseType: 'arraybuffer',
+          timeout: 15000,
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        });
+        if (res.data && res.data.length > 0) {
+          console.log(`[Baileys] ✅ Successfully downloaded ${res.data.length} bytes for media`);
+          return Buffer.from(res.data);
+        }
+      } catch (httpErr: any) {
+        console.warn(`[Baileys] ⚠️ Axios pre-fetch failed (${httpErr.message}). Falling back to URL payload.`);
+      }
+    }
+
+    // 4. Fallback: pass raw url object to Baileys
+    return { url: cleanUrl };
+  } catch (err: any) {
+    console.warn(`[Baileys] ⚠️ resolveMediaPayload error: ${err.message}. Using raw url.`);
+    return { url: mediaUrl };
+  }
+}
+
 export async function sendMedia(
   phone: string,
   mediaUrl: string,
@@ -462,23 +543,7 @@ export async function sendMedia(
   try {
     console.log(`[Baileys] 📤 Sending media message to ${jid}: ${mediaUrl}...`);
 
-    let imagePayload: any = { url: mediaUrl };
-
-    // Resolve local file path if mediaUrl is a local path or uploaded file
-    let localFilePath = '';
-    if (mediaUrl.startsWith('/public/') || mediaUrl.startsWith('public/')) {
-      localFilePath = path.join(process.cwd(), mediaUrl.replace(/^\//, ''));
-    } else if (mediaUrl.includes('/public/uploads/')) {
-      const parts = mediaUrl.split('/public/uploads/');
-      localFilePath = path.join(process.cwd(), 'public', 'uploads', parts[1]);
-    } else if (fs.existsSync(mediaUrl)) {
-      localFilePath = mediaUrl;
-    }
-
-    if (localFilePath && fs.existsSync(localFilePath)) {
-      console.log(`[Baileys] 📂 Loading local image buffer directly from disk: ${localFilePath}`);
-      imagePayload = fs.readFileSync(localFilePath);
-    }
+    const imagePayload = await resolveMediaPayload(mediaUrl);
 
     const result = await sock.sendMessage(jid, {
       image: imagePayload,

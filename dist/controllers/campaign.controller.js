@@ -53,16 +53,29 @@ async function getStats(_req, res) {
 }
 async function getAudienceCounts(_req, res) {
     try {
+        const now = new Date();
         const entries = await Promise.all(Object.entries(audienceMap_1.audienceMap).map(async ([label, statusValue]) => {
             let count;
             if (label === 'Follow-up Leads') {
-                count = await Lead.countDocuments({ 'followUp.active': true });
+                count = await Lead.countDocuments({ 'followUp.active': true, isDeleted: { $ne: true } });
+            }
+            else if (label === 'Due Follow-up Leads') {
+                count = await Lead.countDocuments({ 'followUp.active': true, 'followUp.date': { $lte: now }, isDeleted: { $ne: true } });
+            }
+            else if (label === 'Hot Leads') {
+                count = await Lead.countDocuments({ interestLevel: 'hot', isDeleted: { $ne: true } });
+            }
+            else if (label === 'Warm Leads') {
+                count = await Lead.countDocuments({ interestLevel: 'warm', isDeleted: { $ne: true } });
+            }
+            else if (label === 'Cold Leads') {
+                count = await Lead.countDocuments({ interestLevel: 'cold', isDeleted: { $ne: true } });
             }
             else if (statusValue === null) {
-                count = await Lead.countDocuments({});
+                count = await Lead.countDocuments({ isDeleted: { $ne: true } });
             }
             else {
-                count = await Lead.countDocuments({ status: statusValue });
+                count = await Lead.countDocuments({ status: statusValue, isDeleted: { $ne: true } });
             }
             return [label, count];
         }));
@@ -95,9 +108,23 @@ async function getCampaignById(req, res) {
     }
 }
 async function resolveEligibleLeads(audience, filters) {
-    const query = {};
+    const query = { isDeleted: { $ne: true } };
+    const now = new Date();
     if (audience === 'Follow-up Leads') {
         query['followUp.active'] = true;
+    }
+    else if (audience === 'Due Follow-up Leads') {
+        query['followUp.active'] = true;
+        query['followUp.date'] = { $lte: now };
+    }
+    else if (audience === 'Hot Leads') {
+        query.interestLevel = 'hot';
+    }
+    else if (audience === 'Warm Leads') {
+        query.interestLevel = 'warm';
+    }
+    else if (audience === 'Cold Leads') {
+        query.interestLevel = 'cold';
     }
     else {
         const statusValue = audienceMap_1.audienceMap[audience];

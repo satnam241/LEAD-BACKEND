@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import ConversationState from '../models/conversationState.model';
 import BotFlow from '../models/botFlow.model';
 import Lead from '../models/lead.model';
+import FbForm from '../models/fbForm.model';
 
 export type InterestLevel = 'hot' | 'warm' | 'cold';
 
@@ -21,17 +22,33 @@ const INTEREST_ORDER: Record<InterestLevel, number> = { hot: 0, warm: 1, cold: 2
 export async function listLeadInterest(req: Request, res: Response): Promise<void> {
   try {
     const sortBy = (req.query.sortBy as string) || 'interest';
+    const now = new Date();
 
-    const [states, activeStepsCount, manualLeads] = await Promise.all([
+    const [states, activeStepsCount, manualLeads, fbForms] = await Promise.all([
       ConversationState.find()
-        .populate('leadId', 'fullName phone email status interestLevel note createdAt updatedAt')
+        .populate({
+          path: 'leadId',
+          select: 'fullName phone email status interestLevel formName formId source projectId followUp note createdAt updatedAt',
+          populate: { path: 'projectId', select: 'name slug' },
+        })
+        .populate('activeProjectId', 'name slug')
         .lean(),
       BotFlow.countDocuments({ isActive: true }),
       Lead.find({
         interestLevel: { $in: ['hot', 'warm', 'cold'] },
         isDeleted: { $ne: true },
-      }).lean(),
+      })
+        .populate('projectId', 'name slug')
+        .lean(),
+      FbForm.find().select('formId name').lean(),
     ]);
+
+    const formMap = new Map<string, string>();
+    for (const f of fbForms) {
+      if (f.formId && f.name) {
+        formMap.set(f.formId, f.name);
+      }
+    }
 
     const totalSteps = activeStepsCount > 0 ? activeStepsCount : 2;
 
@@ -48,9 +65,31 @@ export async function listLeadInterest(req: Request, res: Response): Promise<voi
             ? 'Interested'
             : 'No Response';
 
+        const isFollowUpDue = Boolean(
+          leadDoc?.followUp?.active &&
+          leadDoc?.followUp?.date &&
+          new Date(leadDoc.followUp.date) <= now
+        );
+
+        const formName =
+          leadDoc?.formName ||
+          (leadDoc?.formId && formMap.get(leadDoc.formId)) ||
+          (leadDoc?.formId ? `Form ${leadDoc.formId}` : null) ||
+          (leadDoc?.source ? `Source: ${leadDoc.source}` : null) ||
+          'Direct WhatsApp';
+
+        const projectName =
+          (s as any).activeProjectId?.name ||
+          (leadDoc?.projectId as any)?.name ||
+          null;
+
         return {
           leadId: s.leadId,
           phone: s.phone || leadDoc?.phone || '',
+          formName,
+          source: leadDoc?.source || 'WhatsApp',
+          projectName,
+          isFollowUpDue,
           currentStep: s.currentStep,
           totalSteps,
           stepsCompleted: s.answers.length,
@@ -91,9 +130,28 @@ export async function listLeadInterest(req: Request, res: Response): Promise<voi
             ? 'Warm (Direct / Call)'
             : 'Cold (Direct / Call)';
 
+        const isFollowUpDue = Boolean(
+          m.followUp?.active &&
+          m.followUp?.date &&
+          new Date(m.followUp.date) <= now
+        );
+
+        const formName =
+          m.formName ||
+          (m.formId && formMap.get(m.formId)) ||
+          (m.formId ? `Form ${m.formId}` : null) ||
+          (m.source ? `Source: ${m.source}` : null) ||
+          'Direct / Call';
+
+        const projectName = (m.projectId as any)?.name || null;
+
         rows.push({
-          leadId: m,
+          leadId: m as any,
           phone: m.phone || (m as any).whatsapp || '',
+          formName,
+          source: m.source || 'Manual / Call',
+          projectName,
+          isFollowUpDue,
           currentStep: 'manual',
           totalSteps,
           stepsCompleted: 0,
@@ -132,13 +190,19 @@ export async function listLeadInterest(req: Request, res: Response): Promise<voi
 // GET /api/lead-interest/:leadId — full conversation timeline for one lead
 export async function getLeadInterestById(req: Request, res: Response): Promise<void> {
   try {
-    const [state, activeStepsCount, leadDoc] = await Promise.all([
+    const [state, activeStepsCount, leadDoc, fbForms] = await Promise.all([
       ConversationState.findOne({ leadId: req.params.leadId })
         .sort({ updatedAt: -1 })
-        .populate('leadId', 'fullName phone email status interestLevel')
+        .populate({
+          path: 'leadId',
+          select: 'fullName phone email status interestLevel formName formId source projectId followUp',
+          populate: { path: 'projectId', select: 'name slug' },
+        })
+        .populate('activeProjectId', 'name slug')
         .lean(),
       BotFlow.countDocuments({ isActive: true }),
-      Lead.findById(req.params.leadId).lean(),
+      Lead.findById(req.params.leadId).populate('projectId', 'name slug').lean(),
+      FbForm.find().select('formId name').lean(),
     ]);
 
     if (!state && !leadDoc) {
@@ -146,8 +210,20 @@ export async function getLeadInterestById(req: Request, res: Response): Promise<
       return;
     }
 
-    const totalSteps = activeStepsCount > 0 ? activeStepsCount : 2;
+    const formMap = new Map<string, string>();
+    for (const f of fbForms) {
+      if (f.formId && f.name) formMap.set(f.formId, f.name);
+    }
+
     const currentLead = (state?.leadId as any) || leadDoc;
+    const formName =
+      currentLead?.formName ||
+      (currentLead?.formId && formMap.get(currentLead.formId)) ||
+      (currentLead?.formId ? `Form ${currentLead.formId}` : null) ||
+      (currentLead?.source ? `Source: ${currentLead.source}` : null) ||
+      'Direct WhatsApp';
+
+    const totalSteps = activeStepsCount > 0 ? activeStepsCount : 2;
     const leadInterest = currentLead?.interestLevel || null;
     const interest = computeInterest(state?.attemptCount || 0, state?.completedAt, leadInterest);
     const activityLabel =
@@ -162,6 +238,9 @@ export async function getLeadInterestById(req: Request, res: Response): Promise<
       res.json({
         leadId: leadDoc,
         phone: leadDoc?.phone || '',
+        formName,
+        source: leadDoc?.source || 'Manual / Call',
+        projectName: (leadDoc?.projectId as any)?.name || null,
         currentStep: 'manual',
         answers: [],
         attemptCount: 0,
@@ -180,6 +259,9 @@ export async function getLeadInterestById(req: Request, res: Response): Promise<
 
     res.json({
       ...state,
+      formName,
+      source: currentLead?.source || 'WhatsApp',
+      projectName: (state as any).activeProjectId?.name || (currentLead?.projectId as any)?.name || null,
       totalSteps,
       deliveryStatus: (state as any).deliveryStatus || 'sent',
       lastMessageFromUser: (state as any).lastMessageFromUser || null,
