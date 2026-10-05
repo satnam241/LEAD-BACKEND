@@ -1,9 +1,10 @@
 import mongoose, { Types } from 'mongoose';
 import { askLLMSafe, LLMMessage } from './llmService';
-import { getProjectFacts, getDynamicPortfolioCatalogue } from './projectKnowledgeService';
+import { getProjectFacts, getDynamicPortfolioCatalogue, findDirectFaqAnswer } from './projectKnowledgeService';
 import ConversationMessage from '../models/conversationMessage.model';
 import ConversationState from '../models/conversationState.model';
 import Lead from '../models/lead.model';
+import Project from '../models/project.model';
 import FbForm from '../models/fbForm.model';
 import { calculateInterest, persistLeadInterest } from './chatbotService';
 import { recordLearnedQuestion, extractAndSaveLeadPreferences } from './aiLearningService';
@@ -178,9 +179,6 @@ export async function generateReply(
   projectId: Types.ObjectId,
   contextNote?: string
 ): Promise<{ reply: string; needsAgent: boolean; aiPaused: boolean }> {
-  const fallbackText =
-    "Thank you! I have noted your requirements. Our property advisory team will connect with you shortly.";
-
   // 1. Check for explicit human agent / callback / site visit request
   if (isHandoffRequested(text)) {
     const handoffReply =
@@ -208,6 +206,7 @@ export async function generateReply(
       { upsert: true, new: true }
     );
 
+    // Active conversational request -> definitely HOT!
     await persistLeadInterest(lead._id, 'hot', { status: 'interested' });
 
     return { reply: handoffReply, needsAgent: true, aiPaused: true };
@@ -216,11 +215,32 @@ export async function generateReply(
   // 2. Extract and learn lead preferences (budget, unit, timeline) from text
   extractAndSaveLeadPreferences(lead._id, text).catch(() => {});
 
-  // 3. Build system and conversation messages with dynamic facts, portfolio, and guardrails
-  const messages = await buildMessages(lead._id, projectId, text, contextNote);
+  // 3. Check trained FAQs, keywords, and core project knowledge directly
+  let directAnswer: string | null = null;
+  let projectDoc: any = null;
+  if (projectId) {
+    projectDoc = await Project.findById(projectId).lean();
+    if (projectDoc) {
+      directAnswer = findDirectFaqAnswer(projectDoc, text);
+    }
+  }
 
-  // 4. Call Local Llama 3.2 safely
-  const rawReply = await askLLMSafe(messages, fallbackText);
+  // Define smart fallback so user NEVER gets an empty/repetitive single message
+  const smartFallback =
+    directAnswer ||
+    (projectDoc?.summary
+      ? `Regarding *${projectDoc.name}*: ${projectDoc.summary}\n\nFeel free to ask about pricing, unit sizes, location, or schedule a site visit.`
+      : "Thank you! I have noted your requirements. Our property advisory team will connect with you shortly with full details.");
+
+  // 4. Build system and conversation messages with dynamic facts, portfolio, and guardrails
+  const effectiveContextNote = directAnswer
+    ? `${contextNote ? `${contextNote}\n` : ''}VERIFIED DATABASE FACT FOR THIS QUERY: "${directAnswer}". Convey this answer directly, concisely, and accurately.`
+    : contextNote;
+
+  const messages = await buildMessages(lead._id, projectId, text, effectiveContextNote);
+
+  // 5. Call Local Llama 3.2 safely with smart fallback
+  const rawReply = await askLLMSafe(messages, smartFallback);
   let reply = cleanWhatsAppReply(rawReply);
 
   // Cap maximum reply length
@@ -228,14 +248,14 @@ export async function generateReply(
     reply = reply.slice(0, AI_MAX_REPLY_CHARS - 3).trim() + '...';
   }
 
-  // 5. Persist messages for history & transcript
+  // 6. Persist messages for history & transcript
   await ConversationMessage.create([
     { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
     { leadId: lead._id, phone, role: 'assistant', content: reply, createdAt: new Date() },
   ]);
 
-  // 6. Update ConversationState and Lead interest scoring
-  const state = await ConversationState.findOneAndUpdate(
+  // 7. Update ConversationState and upgrade lead interest to HOT!
+  await ConversationState.findOneAndUpdate(
     { leadId: lead._id },
     {
       $set: {
@@ -249,16 +269,8 @@ export async function generateReply(
     { upsert: true, new: true }
   );
 
-  const isCampaignLead = Boolean(
-    state.deliveryStatus === 'read' ||
-    state.deliveryStatus === 'delivered' ||
-    state.deliveryStatus === 'replied' ||
-    lead.source === 'whatsapp' ||
-    lead.source === 'campaign'
-  );
-
-  const interest = calculateInterest(state.attemptCount, false, isCampaignLead);
-  await persistLeadInterest(lead._id, interest, { status: 'interested' });
+  // 🔥 Anyone actively querying/chatting on WhatsApp is an engaged HOT lead!
+  await persistLeadInterest(lead._id, 'hot', { status: 'interested' });
 
   // 7. Auto-learning: if AI deferred to human team or was asked an unhandled question, record it
   const lowerReply = reply.toLowerCase();

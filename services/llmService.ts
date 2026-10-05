@@ -33,25 +33,38 @@ export function getLLMQueueLength(): number {
   return 0;
 }
 
+let cachedModelId: string | null = null;
+
 /**
  * Health check to verify if the local Llamafile / llama.cpp server is running and reachable
  */
 export async function isLLMUp(): Promise<boolean> {
   const rootUrl = RAW_BASE_URL.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const authHeaders = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'local-no-key'
+    ? { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }
+    : {};
 
-  // 1. Check root /health endpoint of llamafile/llama.cpp
+  // 1. Check OpenAI-compatible /v1/models endpoint with auth
+  try {
+    const res = await axios.get(`${LLM_BASE_URL}/models`, {
+      timeout: 3000,
+      headers: authHeaders,
+      validateStatus: () => true,
+    });
+    if (res.status === 200 && res.data) {
+      const models = res.data?.data || res.data?.models || [];
+      if (models.length > 0 && models[0]?.id) {
+        cachedModelId = models[0].id;
+      }
+      return true;
+    }
+  } catch {}
+
+  // 2. Check root /health endpoint of llamafile/llama.cpp
   try {
     const res = await axios.get(`${rootUrl}/health`, {
       timeout: 2500,
-      validateStatus: () => true,
-    });
-    if (res.status === 200) return true;
-  } catch {}
-
-  // 2. Check OpenAI-compatible /v1/models endpoint
-  try {
-    const res = await axios.get(`${LLM_BASE_URL}/models`, {
-      timeout: 2500,
+      headers: authHeaders,
       validateStatus: () => true,
     });
     if (res.status === 200) return true;
@@ -61,6 +74,7 @@ export async function isLLMUp(): Promise<boolean> {
   try {
     const res = await axios.get(rootUrl, {
       timeout: 2000,
+      headers: authHeaders,
       validateStatus: () => true,
     });
     if (res.status === 200) return true;
@@ -77,50 +91,86 @@ export async function askLLM(
   messages: LLMMessage[],
   options?: { maxTokens?: number; temperature?: number }
 ): Promise<string> {
-  const model = LLM_MODEL;
-  const maxTokens = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '512', 10);
+  const modelCandidate = cachedModelId || LLM_MODEL;
+  // 🛡️ CRITICAL: Never let maxTokens exceed model context window (n_ctx is 2048)
+  // Clamp to max 512 tokens for concise, fast WhatsApp responses
+  const requestedMax = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
+  const maxTokens = Math.min(Math.max(requestedMax > 0 ? requestedMax : 400, 64), 512);
   const temperature = options?.temperature !== undefined ? options.temperature : 0.3;
 
-  // 1. Try via OpenAI SDK client
-  try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    });
-    const raw = response.choices?.[0]?.message?.content || '';
-    const cleaned = cleanThinkTags(raw);
-    if (cleaned && cleaned.trim()) {
-      return cleaned;
-    }
-  } catch (sdkErr: any) {
-    console.warn('[Local LLM] ⚠️ OpenAI SDK call failed, attempting direct HTTP fallback:', sdkErr?.message || sdkErr);
+  const apiKey = process.env.OPENAI_API_KEY;
+  const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey && apiKey !== 'local-no-key') {
+    authHeaders['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  // 2. Fallback: Direct Axios POST to /v1/chat/completions
-  try {
-    const res = await axios.post(
-      `${LLM_BASE_URL}/chat/completions`,
-      {
-        model,
+  // Helper to try completions with a specific model identifier
+  const tryChat = async (modelToUse: string): Promise<string | null> => {
+    // 1. Try via OpenAI SDK client
+    try {
+      const response = await openai.chat.completions.create({
+        model: modelToUse,
         messages,
         max_tokens: maxTokens,
         temperature,
-      },
-      {
-        timeout: parseInt(process.env.LLM_TIMEOUT_MS || '60000', 10),
-        headers: { 'Content-Type': 'application/json' },
+      });
+      const raw = response.choices?.[0]?.message?.content || '';
+      const cleaned = cleanThinkTags(raw);
+      if (cleaned && cleaned.trim()) {
+        return cleaned;
       }
-    );
-
-    const raw = res.data?.choices?.[0]?.message?.content || '';
-    const cleaned = cleanThinkTags(raw);
-    if (cleaned && cleaned.trim()) {
-      return cleaned;
+    } catch (sdkErr: any) {
+      console.warn(
+        `[Local LLM] ⚠️ OpenAI SDK call with model "${modelToUse}" failed:`,
+        sdkErr?.status || '',
+        sdkErr?.message || sdkErr
+      );
     }
-  } catch (axiosErr: any) {
-    console.error('[Local LLM] ❌ Direct HTTP call to llamafile failed:', axiosErr?.message || axiosErr);
+
+    // 2. Direct Axios POST fallback with auth headers
+    try {
+      const res = await axios.post(
+        `${LLM_BASE_URL}/chat/completions`,
+        {
+          model: modelToUse,
+          messages,
+          max_tokens: maxTokens,
+          temperature,
+        },
+        {
+          timeout: parseInt(process.env.LLM_TIMEOUT_MS || '60000', 10),
+          headers: authHeaders,
+        }
+      );
+
+      const raw = res.data?.choices?.[0]?.message?.content || '';
+      const cleaned = cleanThinkTags(raw);
+      if (cleaned && cleaned.trim()) {
+        return cleaned;
+      }
+    } catch (axiosErr: any) {
+      const status = axiosErr.response?.status;
+      const errorData = axiosErr.response?.data;
+      console.error(
+        `[Local LLM] ❌ Direct Axios call to llamafile failed (HTTP ${status}):`,
+        errorData || axiosErr.message
+      );
+    }
+
+    return null;
+  };
+
+  // 1. Attempt with primary candidate
+  let result = await tryChat(modelCandidate);
+  if (result) return result;
+
+  // 2. If primary had a path or didn't have /opt/llm/, try alternative identifier
+  if (modelCandidate !== LLM_MODEL) {
+    result = await tryChat(LLM_MODEL);
+    if (result) return result;
+  } else if (!modelCandidate.startsWith('/opt/llm/')) {
+    result = await tryChat(`/opt/llm/${modelCandidate}`);
+    if (result) return result;
   }
 
   return '';

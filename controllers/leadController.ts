@@ -847,7 +847,7 @@ export const getLeadsController = async (req: Request, res: Response) => {
       }
     }
 
-    const leads = await Lead.find(filters).sort({ createdAt: -1 }).lean();
+    const leads = await Lead.find(filters).sort({ updatedAt: -1, createdAt: -1 }).lean();
     return res.status(200).json(leads);
   } catch (err) {
     console.error("💥 Error in getLeadsController:", err);

@@ -8,11 +8,11 @@ export type InterestLevel = 'hot' | 'warm' | 'cold';
 
 function computeInterest(attemptCount: number, completedAt?: Date, existingLevel?: string | null): InterestLevel {
   const norm = (existingLevel || '').toLowerCase().trim();
-  if (norm === 'hot' || norm === 'warm' || norm === 'cold') {
-    return norm as InterestLevel;
-  }
+  if (norm === 'hot') return 'hot';
+  // Any lead with active interaction or completed flow is HOT
+  if (completedAt || attemptCount >= 1) return 'hot';
+  if (norm === 'warm' || norm === 'cold') return norm as InterestLevel;
   if (attemptCount === 0) return 'cold';
-  if (completedAt || attemptCount >= 2) return 'hot';
   return 'warm';
 }
 

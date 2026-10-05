@@ -183,7 +183,7 @@ const adminGetLeads = async (req, res) => {
                 const ConversationState = (await Promise.resolve().then(() => __importStar(require("../models/conversationState.model")))).default;
                 const states = await ConversationState.find().lean();
                 for (const s of states) {
-                    const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 2) ? 'hot' : 'warm';
+                    const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 1) ? 'hot' : 'warm';
                     if (comp === rawInterest && s.leadId) {
                         matchedLeadIds.push(s.leadId);
                     }
@@ -229,9 +229,17 @@ const adminGetLeads = async (req, res) => {
         const limitNum = Math.min(100, parseInt(limit));
         const skip = (pageNum - 1) * limitNum;
         const [leads, totalLeads] = await Promise.all([
-            lead_model_1.default.find(filter).sort({ receivedAt: -1 }).skip(skip).limit(limitNum),
+            lead_model_1.default.find(filter).sort({ updatedAt: -1, receivedAt: -1 }).skip(skip).limit(limitNum),
             lead_model_1.default.countDocuments(filter),
         ]);
+        // Ensure interestLevel is preserved and displayed in the frontend
+        const mappedLeads = leads.map(l => {
+            const doc = l.toObject ? l.toObject() : { ...l };
+            if (!doc.interestLevel && rawInterest) {
+                doc.interestLevel = rawInterest;
+            }
+            return doc;
+        });
         // Status counts (unfiltered — for stat cards)
         const statusAgg = await lead_model_1.default.aggregate([
             { $match: { isDeleted: false } },
@@ -244,7 +252,7 @@ const adminGetLeads = async (req, res) => {
         });
         res.json({
             success: true,
-            leads,
+            leads: mappedLeads,
             totalLeads,
             // legacy fields (frontend purana code ke liye)
             newLeadsCount: byStatus["new"] ?? 0,
@@ -628,9 +636,25 @@ const adminAdvancedMonthlyReport = async (req, res) => {
             { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
             { $group: { _id: '$leadTemperature', count: { $sum: 1 } } },
         ]);
+        // ── ALL-TIME STATS (across all leads in DB) ──────────────────
+        const allTimeClosedPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+            status: { $regex: /^(closed|converted)$/i },
+        });
+        const now = new Date();
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const allTimeDueFollowupsPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+            'followUp.date': { $ne: null, $lte: endOfToday },
+            'followUp.overdueStatus': { $ne: 'resolved' },
+            'followUp.active': { $ne: false },
+        });
+        const allTimeTotalLeadsPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+        });
         // ── EXECUTE ALL ───────────────────────────────────────────────
         const [totalLeads, previousMonthLeads, statusCounts, prevStatusCounts, // ✅ NEW
-        sourceWise, dailyGrowth, followupCompletion, leadTemperature,] = await Promise.all([
+        sourceWise, dailyGrowth, followupCompletion, leadTemperature, allTimeClosed, allTimeDueFollowups, allTimeTotalLeads,] = await Promise.all([
             totalLeadsPromise,
             previousMonthLeadsPromise,
             statusCountsPromise,
@@ -639,6 +663,9 @@ const adminAdvancedMonthlyReport = async (req, res) => {
             dailyGrowthPromise,
             followupCompletionPromise,
             leadTemperaturePromise,
+            allTimeClosedPromise,
+            allTimeDueFollowupsPromise,
+            allTimeTotalLeadsPromise,
         ]);
         // ── GROWTH % ──────────────────────────────────────────────────
         const growthPercentage = previousMonthLeads > 0
@@ -687,6 +714,10 @@ const adminAdvancedMonthlyReport = async (req, res) => {
                 // Current month
                 totalLeads,
                 byStatus,
+                // All-time / DB-wide stats
+                allTimeClosed,
+                allTimeDueFollowups,
+                allTimeTotalLeads,
                 // ✅ Previous month — used by ring chart comparison
                 previousMonthLeads,
                 prevByStatus,

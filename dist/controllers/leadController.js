@@ -279,7 +279,7 @@ const getLeadsController = async (req, res) => {
                 filters["followUp.active"] = true;
             }
         }
-        const leads = await lead_model_1.default.find(filters).sort({ createdAt: -1 }).lean();
+        const leads = await lead_model_1.default.find(filters).sort({ updatedAt: -1, createdAt: -1 }).lean();
         return res.status(200).json(leads);
     }
     catch (err) {

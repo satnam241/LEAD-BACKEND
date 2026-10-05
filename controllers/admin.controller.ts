@@ -170,7 +170,7 @@ export const adminGetLeads = async (req: Request, res: Response) => {
         const ConversationState = (await import("../models/conversationState.model")).default;
         const states = await ConversationState.find().lean();
         for (const s of states) {
-          const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 2) ? 'hot' : 'warm';
+          const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 1) ? 'hot' : 'warm';
           if (comp === rawInterest && s.leadId) {
             matchedLeadIds.push(s.leadId);
           }
@@ -218,9 +218,18 @@ export const adminGetLeads = async (req: Request, res: Response) => {
     const skip     = (pageNum - 1) * limitNum;
 
     const [leads, totalLeads] = await Promise.all([
-      Lead.find(filter).sort({ receivedAt: -1 }).skip(skip).limit(limitNum),
+      Lead.find(filter).sort({ updatedAt: -1, receivedAt: -1 }).skip(skip).limit(limitNum),
       Lead.countDocuments(filter),
     ]);
+
+    // Ensure interestLevel is preserved and displayed in the frontend
+    const mappedLeads = leads.map(l => {
+      const doc = l.toObject ? l.toObject() : { ...l };
+      if (!doc.interestLevel && rawInterest) {
+        doc.interestLevel = rawInterest as any;
+      }
+      return doc;
+    });
 
     // Status counts (unfiltered — for stat cards)
     const statusAgg = await Lead.aggregate([
@@ -235,7 +244,7 @@ export const adminGetLeads = async (req: Request, res: Response) => {
 
     res.json({
       success:        true,
-      leads,
+      leads:          mappedLeads,
       totalLeads,
       // legacy fields (frontend purana code ke liye)
       newLeadsCount:  byStatus["new"]         ?? 0,
@@ -636,6 +645,25 @@ export const adminAdvancedMonthlyReport = async (
       { $group: { _id: '$leadTemperature', count: { $sum: 1 } } },
     ]);
 
+    // ── ALL-TIME STATS (across all leads in DB) ──────────────────
+    const allTimeClosedPromise = Lead.countDocuments({
+      isDeleted: false,
+      status: { $regex: /^(closed|converted)$/i },
+    });
+
+    const now = new Date();
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const allTimeDueFollowupsPromise = Lead.countDocuments({
+      isDeleted: false,
+      'followUp.date': { $ne: null, $lte: endOfToday },
+      'followUp.overdueStatus': { $ne: 'resolved' },
+      'followUp.active': { $ne: false },
+    });
+
+    const allTimeTotalLeadsPromise = Lead.countDocuments({
+      isDeleted: false,
+    });
+
     // ── EXECUTE ALL ───────────────────────────────────────────────
     const [
       totalLeads,
@@ -646,6 +674,9 @@ export const adminAdvancedMonthlyReport = async (
       dailyGrowth,
       followupCompletion,
       leadTemperature,
+      allTimeClosed,
+      allTimeDueFollowups,
+      allTimeTotalLeads,
     ] = await Promise.all([
       totalLeadsPromise,
       previousMonthLeadsPromise,
@@ -655,6 +686,9 @@ export const adminAdvancedMonthlyReport = async (
       dailyGrowthPromise,
       followupCompletionPromise,
       leadTemperaturePromise,
+      allTimeClosedPromise,
+      allTimeDueFollowupsPromise,
+      allTimeTotalLeadsPromise,
     ]);
 
     // ── GROWTH % ──────────────────────────────────────────────────
@@ -710,6 +744,11 @@ export const adminAdvancedMonthlyReport = async (
         // Current month
         totalLeads,
         byStatus,
+
+        // All-time / DB-wide stats
+        allTimeClosed,
+        allTimeDueFollowups,
+        allTimeTotalLeads,
 
         // ✅ Previous month — used by ring chart comparison
         previousMonthLeads,

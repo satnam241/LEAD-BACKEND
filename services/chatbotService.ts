@@ -17,6 +17,7 @@ import LeadModel, { ILead } from '../models/lead.model';
 import { generateReply } from './aiChatService';
 import { getLLMQueueLength } from './llmService';
 import { extractAndSaveLeadPreferences } from './aiLearningService';
+import { findDirectFaqAnswer } from './projectKnowledgeService';
 import mongoose from 'mongoose';
 
 const READ_TRIGGER_DELAY_MS = 2500;
@@ -87,32 +88,39 @@ export async function persistLeadInterest(
   candidateInterest: 'hot' | 'warm' | 'cold',
   extraUpdates: Record<string, any> = {}
 ) {
+  if (!leadId) return null;
   const currentLead = await LeadModel.findById(leadId).select('interestLevel').lean();
   const finalInterest = upgradeInterest(currentLead?.interestLevel, candidateInterest);
-  return LeadModel.findByIdAndUpdate(leadId, {
-    ...extraUpdates,
-    interestLevel: finalInterest,
-  });
+  return LeadModel.findByIdAndUpdate(
+    leadId,
+    {
+      ...extraUpdates,
+      interestLevel: finalInterest,
+      updatedAt: new Date(),
+    },
+    { new: true }
+  );
 }
 
-// Compute lead interest
+// Compute lead interest - anyone who chats or answers is HOT
 export function calculateInterest(
   attemptCount: number,
   isCompleted: boolean = false,
   hasCampaignContext: boolean = false
 ): 'hot' | 'warm' | 'cold' {
   if (attemptCount === 0) return 'cold';
-  if (hasCampaignContext || isCompleted || attemptCount >= 2) return 'hot';
+  if (hasCampaignContext || isCompleted || attemptCount >= 1) return 'hot';
   return 'warm';
 }
 
-// Normalizes and searches lead across all common phone formats
+// Normalizes and searches lead across all common phone formats + ConversationState mapping
 export async function findLeadByPhone(rawPhone: string) {
   const norm = normalizePhone(rawPhone);
   if (!norm) return null;
   const last10 = norm.slice(-10);
 
-  return LeadModel.findOne({
+  // 1. Direct phone matches with exact or regex on last 10 digits
+  let lead = await LeadModel.findOne({
     $or: [
       { phone: norm },
       { phone: `+${norm}` },
@@ -120,8 +128,37 @@ export async function findLeadByPhone(rawPhone: string) {
       { phone: `+91${last10}` },
       { phone: `91${last10}` },
       { phone: `0${last10}` },
+      { phone: { $regex: last10 } },
     ],
   });
+  if (lead) return lead;
+
+  // 2. Check ConversationState for mapped leadId (handles WhatsApp privacy @lid or alternative JIDs)
+  const conv = await ConversationState.findOne({
+    $or: [{ phone: norm }, { phone: rawPhone }],
+  }).populate('leadId');
+  if (conv && conv.leadId) {
+    return conv.leadId;
+  }
+
+  // 3. Check Campaign recipient history
+  const camp = await Campaign.findOne({
+    $or: [
+      { 'recipientStatuses.phone': norm },
+      { 'recipientStatuses.phone': { $regex: last10 } },
+    ],
+  }).lean();
+  if (camp) {
+    const rec = camp.recipientStatuses.find(
+      (r: any) => r.phone && (normalizePhone(r.phone) === norm || r.phone.includes(last10))
+    );
+    if (rec?.leadId) {
+      const campLead = await LeadModel.findById(rec.leadId);
+      if (campLead) return campLead;
+    }
+  }
+
+  return null;
 }
 
 export async function getActiveFlowSteps() {
@@ -478,9 +515,13 @@ async function handleUserInteraction(phone: string, text: string, lead: any): Pr
     } catch (err: any) {
       console.error('[Chatbot] ❌ Error generating LLM reply:', err?.message || err);
       await sendTyping(phone, 'paused');
+      const directFallback = project ? findDirectFaqAnswer(project, text) : null;
       await sendText(
         phone,
-        'Thank you! I have noted your requirements. Our dedicated property advisory team will connect with you shortly!'
+        directFallback ||
+        (project?.summary
+          ? `Regarding *${project.name}*: ${project.summary}\n\nFeel free to ask about pricing, unit sizes, location, or schedule a site visit.`
+          : 'Thank you! I have noted your requirements. Our dedicated property advisory team will connect with you shortly!')
       );
     }
   } catch (err: any) {
@@ -600,6 +641,10 @@ export function registerChatbot(): void {
       console.log(`[Chatbot] 💬 Incoming message from ${normPhone}: "${text ?? ''}"`);
 
       let lead = await findLeadByPhone(normPhone);
+      if (!lead && fromJid) {
+        lead = await findLeadByPhone(fromJid);
+      }
+
       if (!lead) {
         console.log(`[Chatbot] ⚠️ Number ${normPhone} is not registered in CRM. Creating active lead...`);
         lead = await LeadModel.create({
@@ -607,11 +652,34 @@ export function registerChatbot(): void {
           phone: normPhone,
           source: 'whatsapp',
           status: 'interested',
-          interestLevel: 'warm',
+          interestLevel: 'hot',
         });
       }
 
-      await LeadModel.findByIdAndUpdate(lead._id, { status: 'interested' });
+      // 🔥 GUARANTEED IMMEDIATE HOT UPGRADE in Lead document!
+      await LeadModel.findByIdAndUpdate(lead._id, {
+        $set: {
+          interestLevel: 'hot',
+          status: 'interested',
+          updatedAt: new Date(),
+        },
+      });
+
+      // Also ensure ConversationState attemptCount is at least 1 so filters and stats stay synced
+      await ConversationState.findOneAndUpdate(
+        { $or: [{ phone: normPhone }, { leadId: lead._id }] },
+        {
+          $set: {
+            deliveryStatus: 'replied',
+            lastMessageFromUser: text,
+            lastMessageAt: new Date(),
+            lastActiveAt: new Date(),
+          },
+          $inc: { attemptCount: 1 },
+          $setOnInsert: { startedAt: new Date(), currentStep: 'completed' },
+        },
+        { upsert: true, new: true }
+      ).catch(() => {});
 
       // ── Per-Phone 3-Second Debounce Protection ──
       if (processingPhones.has(normPhone)) {

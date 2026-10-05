@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getProjectFacts = getProjectFacts;
+exports.findDirectFaqAnswer = findDirectFaqAnswer;
 exports.getDynamicPortfolioCatalogue = getDynamicPortfolioCatalogue;
 const project_model_1 = __importDefault(require("../models/project.model"));
 async function getProjectFacts(projectId, userMessage) {
@@ -86,6 +87,84 @@ async function getProjectFacts(projectId, userMessage) {
         return rawFacts.slice(0, 2490) + '...';
     }
     return rawFacts;
+}
+/**
+ * Matches user query against trained FAQs, keywords, and core project attributes
+ * Returns exact verified answer if match confidence is high, or null.
+ */
+function findDirectFaqAnswer(project, userMessage) {
+    if (!project || !userMessage || !userMessage.trim())
+        return null;
+    const rawLower = userMessage.toLowerCase().trim();
+    const cleanMsg = rawLower.replace(/[^\w\s\u0900-\u097F]/gi, ' ');
+    const tokens = cleanMsg.split(/\s+/).filter(t => t.length >= 3);
+    // 1. Check trained FAQs in project
+    const faqs = project.faqs || [];
+    let bestFaq = null;
+    let highestScore = 0;
+    for (const faq of faqs) {
+        let score = 0;
+        const qLower = (faq.question || '').toLowerCase().trim();
+        const aLower = (faq.answer || '').toLowerCase().trim();
+        const keywords = (faq.keywords || []).map((k) => k.toLowerCase().trim()).filter(Boolean);
+        // Exact or phrase match with question
+        if (rawLower.includes(qLower) || qLower.includes(rawLower)) {
+            score += 15;
+        }
+        // Keyword matches (very high priority!)
+        for (const kw of keywords) {
+            if (rawLower.includes(kw) || cleanMsg.includes(kw)) {
+                score += 8;
+            }
+        }
+        // Token overlap
+        for (const token of tokens) {
+            if (qLower.includes(token))
+                score += 3;
+            if (keywords.some(kw => kw.includes(token)))
+                score += 4;
+            if (aLower.includes(token))
+                score += 1;
+        }
+        if (score > highestScore) {
+            highestScore = score;
+            bestFaq = faq;
+        }
+    }
+    // If trained FAQ match has strong confidence (score >= 6), return its answer directly
+    if (bestFaq && highestScore >= 6 && bestFaq.answer && bestFaq.answer.trim()) {
+        return bestFaq.answer.trim();
+    }
+    // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
+    const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr'].some(w => rawLower.includes(w));
+    if (isAskingPrice && project.priceRange) {
+        let priceReply = `The price range for *${project.name}* is *${project.priceRange}*.`;
+        if (project.unitTypes && project.unitTypes.length > 0) {
+            const unitDetails = project.unitTypes
+                .filter((u) => u.priceFrom)
+                .map((u) => `• ${u.type}: Starting from ${u.priceFrom}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`)
+                .join('\n');
+            if (unitDetails)
+                priceReply += `\n\n${unitDetails}`;
+        }
+        return priceReply;
+    }
+    const isAskingLocation = ['location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated'].some(w => rawLower.includes(w));
+    if (isAskingLocation && project.location) {
+        return `*${project.name}* is located at *${project.location}*.\nWould you like more details on nearby connectivity or a site visit?`;
+    }
+    const isAskingPossession = ['possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover'].some(w => rawLower.includes(w));
+    if (isAskingPossession && project.possession) {
+        return `The possession timeline for *${project.name}* is *${project.possession}*.`;
+    }
+    const isAskingSizes = ['size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration'].some(w => rawLower.includes(w));
+    if (isAskingSizes && project.unitTypes && project.unitTypes.length > 0) {
+        const unitList = project.unitTypes
+            .map((u) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` — Rate: ${u.priceFrom}` : ''}`)
+            .join('\n');
+        return `Available configurations at *${project.name}*:\n\n${unitList}\n\nWhich configuration best suits your requirement?`;
+    }
+    return null;
 }
 /**
  * Dynamically queries all active properties from MongoDB to provide a live portfolio catalogue

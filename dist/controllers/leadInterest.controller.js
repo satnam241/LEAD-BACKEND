@@ -12,13 +12,15 @@ const lead_model_1 = __importDefault(require("../models/lead.model"));
 const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
 function computeInterest(attemptCount, completedAt, existingLevel) {
     const norm = (existingLevel || '').toLowerCase().trim();
-    if (norm === 'hot' || norm === 'warm' || norm === 'cold') {
+    if (norm === 'hot')
+        return 'hot';
+    // Any lead with active interaction or completed flow is HOT
+    if (completedAt || attemptCount >= 1)
+        return 'hot';
+    if (norm === 'warm' || norm === 'cold')
         return norm;
-    }
     if (attemptCount === 0)
         return 'cold';
-    if (completedAt || attemptCount >= 2)
-        return 'hot';
     return 'warm';
 }
 const INTEREST_ORDER = { hot: 0, warm: 1, cold: 2 };

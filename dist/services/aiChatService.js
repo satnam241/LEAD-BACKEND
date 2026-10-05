@@ -12,6 +12,7 @@ const projectKnowledgeService_1 = require("./projectKnowledgeService");
 const conversationMessage_model_1 = __importDefault(require("../models/conversationMessage.model"));
 const conversationState_model_1 = __importDefault(require("../models/conversationState.model"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
+const project_model_1 = __importDefault(require("../models/project.model"));
 const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
 const chatbotService_1 = require("./chatbotService");
 const aiLearningService_1 = require("./aiLearningService");
@@ -162,7 +163,6 @@ CORE CONVERSATION RULES & PRIORITIES (STRICTLY ENFORCE):
  * Generates an AI reply for an incoming WhatsApp message using Local Llama 3.2 (llamafile)
  */
 async function generateReply(phone, text, lead, projectId, contextNote) {
-    const fallbackText = "Thank you! I have noted your requirements. Our property advisory team will connect with you shortly.";
     // 1. Check for explicit human agent / callback / site visit request
     if (isHandoffRequested(text)) {
         const handoffReply = "Sure! I have shared your request with our senior sales & advisory team. A dedicated property advisor will contact you shortly.";
@@ -182,27 +182,45 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
             },
             $inc: { attemptCount: 1 },
         }, { upsert: true, new: true });
+        // Active conversational request -> definitely HOT!
         await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
         return { reply: handoffReply, needsAgent: true, aiPaused: true };
     }
     // 2. Extract and learn lead preferences (budget, unit, timeline) from text
     (0, aiLearningService_1.extractAndSaveLeadPreferences)(lead._id, text).catch(() => { });
-    // 3. Build system and conversation messages with dynamic facts, portfolio, and guardrails
-    const messages = await buildMessages(lead._id, projectId, text, contextNote);
-    // 4. Call Local Llama 3.2 safely
-    const rawReply = await (0, llmService_1.askLLMSafe)(messages, fallbackText);
+    // 3. Check trained FAQs, keywords, and core project knowledge directly
+    let directAnswer = null;
+    let projectDoc = null;
+    if (projectId) {
+        projectDoc = await project_model_1.default.findById(projectId).lean();
+        if (projectDoc) {
+            directAnswer = (0, projectKnowledgeService_1.findDirectFaqAnswer)(projectDoc, text);
+        }
+    }
+    // Define smart fallback so user NEVER gets an empty/repetitive single message
+    const smartFallback = directAnswer ||
+        (projectDoc?.summary
+            ? `Regarding *${projectDoc.name}*: ${projectDoc.summary}\n\nFeel free to ask about pricing, unit sizes, location, or schedule a site visit.`
+            : "Thank you! I have noted your requirements. Our property advisory team will connect with you shortly with full details.");
+    // 4. Build system and conversation messages with dynamic facts, portfolio, and guardrails
+    const effectiveContextNote = directAnswer
+        ? `${contextNote ? `${contextNote}\n` : ''}VERIFIED DATABASE FACT FOR THIS QUERY: "${directAnswer}". Convey this answer directly, concisely, and accurately.`
+        : contextNote;
+    const messages = await buildMessages(lead._id, projectId, text, effectiveContextNote);
+    // 5. Call Local Llama 3.2 safely with smart fallback
+    const rawReply = await (0, llmService_1.askLLMSafe)(messages, smartFallback);
     let reply = cleanWhatsAppReply(rawReply);
     // Cap maximum reply length
     if (reply.length > AI_MAX_REPLY_CHARS) {
         reply = reply.slice(0, AI_MAX_REPLY_CHARS - 3).trim() + '...';
     }
-    // 5. Persist messages for history & transcript
+    // 6. Persist messages for history & transcript
     await conversationMessage_model_1.default.create([
         { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
         { leadId: lead._id, phone, role: 'assistant', content: reply, createdAt: new Date() },
     ]);
-    // 6. Update ConversationState and Lead interest scoring
-    const state = await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+    // 7. Update ConversationState and upgrade lead interest to HOT!
+    await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
         $set: {
             lastMessageFromUser: text,
             lastMessageAt: new Date(),
@@ -211,13 +229,8 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
         },
         $inc: { attemptCount: 1 },
     }, { upsert: true, new: true });
-    const isCampaignLead = Boolean(state.deliveryStatus === 'read' ||
-        state.deliveryStatus === 'delivered' ||
-        state.deliveryStatus === 'replied' ||
-        lead.source === 'whatsapp' ||
-        lead.source === 'campaign');
-    const interest = (0, chatbotService_1.calculateInterest)(state.attemptCount, false, isCampaignLead);
-    await (0, chatbotService_1.persistLeadInterest)(lead._id, interest, { status: 'interested' });
+    // 🔥 Anyone actively querying/chatting on WhatsApp is an engaged HOT lead!
+    await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
     // 7. Auto-learning: if AI deferred to human team or was asked an unhandled question, record it
     const lowerReply = reply.toLowerCase();
     const isDeferred = lowerReply.includes('team') ||
