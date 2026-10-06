@@ -53,6 +53,13 @@ app.use(express_1.default.urlencoded({ extended: true }));
 app.get("/", (_req, res) => {
     res.send("🚀 Facebook Webhook API Live!");
 });
+app.get(["/health", "/api/health"], (_req, res) => {
+    res.status(200).json({
+        status: "ok",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+    });
+});
 app.use("/api/webhook", fbWebhook_1.default);
 app.use("/api/webhook/twilio", whatsappWebhook_1.default);
 app.use("/api/leads", leads_route_1.default);
