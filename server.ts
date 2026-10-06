@@ -58,6 +58,14 @@ app.get("/", (_req, res) => {
   res.send("🚀 Facebook Webhook API Live!");
 });
 
+app.get(["/health", "/api/health"], (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use("/api/webhook", fbWebhook);
 app.use("/api/webhook/twilio", twilioWebhook);
 app.use("/api/leads", leadsRoute);
