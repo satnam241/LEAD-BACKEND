@@ -643,21 +643,11 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         });
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        // Overdue follow-ups (day-based: strictly before today, not resolved)
         const allTimeDueFollowupsPromise = lead_model_1.default.countDocuments({
             isDeleted: false,
-            $or: [
-                // Overdue follow-ups (same query as getOverdueFollowUps)
-                {
-                    'followUp.date': { $ne: null, $lt: now },
-                    'followUp.overdueStatus': { $ne: 'resolved' },
-                },
-                // Due today follow-ups (same query as getDueFollowUps)
-                {
-                    'followUp.active': true,
-                    'followUp.date': { $gte: startOfToday, $lte: endOfToday },
-                },
-            ],
+            'followUp.date': { $ne: null, $lt: startOfToday },
+            'followUp.overdueStatus': { $ne: 'resolved' },
         });
         const allTimeTotalLeadsPromise = lead_model_1.default.countDocuments({
             isDeleted: false,

@@ -241,24 +241,24 @@ const getDueFollowUps = async (_req, res) => {
     }
 };
 exports.getDueFollowUps = getDueFollowUps;
-// ✅ Overdue Follow-ups — enhanced (delete nahi, status track karo)
+// ✅ Overdue Follow-ups — Day-based: strictly before today (yesterday or older)
 const getOverdueFollowUps = async (_req, res) => {
     try {
-        const now = new Date();
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
         const overdue = await lead_model_1.default.find({
-            "followUp.date": { $lt: now },
+            "followUp.date": { $ne: null, $lt: startOfDay },
             "followUp.overdueStatus": { $ne: "resolved" },
         })
             .select("fullName phone email followUp note assignedTo assignedBy status createdAt")
             .sort({ "followUp.date": 1 });
+        const now = new Date();
         const data = overdue.map((lead) => {
-            const overdueMs = now.getTime() - new Date(lead.followUp.date).getTime();
+            const overdueMs = startOfDay.getTime() - new Date(lead.followUp.date).getTime();
             const mins = Math.floor(overdueMs / 60000);
             const hours = Math.floor(mins / 60);
-            const days = Math.floor(hours / 24);
-            const overdueLabel = days > 0 ? `${days}d overdue` :
-                hours > 0 ? `${hours}h overdue` :
-                    `${mins}m overdue`;
+            const days = Math.max(1, Math.floor(hours / 24));
+            const overdueLabel = `${days}d overdue`;
             return {
                 _id: lead._id,
                 fullName: lead.fullName,
@@ -388,16 +388,16 @@ exports.rescheduleFollowUp = rescheduleFollowUp;
 // ✅ Stats — dashboard counts
 const getFollowUpStats = async (_req, res) => {
     try {
-        const now = new Date();
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
         const [overdue, upcoming, resolved] = await Promise.all([
             lead_model_1.default.countDocuments({
-                "followUp.active": true,
-                "followUp.date": { $lt: now },
+                "followUp.date": { $ne: null, $lt: startOfDay },
                 "followUp.overdueStatus": { $ne: "resolved" },
             }),
             lead_model_1.default.countDocuments({
                 "followUp.active": true,
-                "followUp.date": { $gte: now },
+                "followUp.date": { $gte: startOfDay },
             }),
             lead_model_1.default.countDocuments({
                 "followUp.overdueStatus": "resolved",
