@@ -354,7 +354,13 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
     const { status, interestLevel, interest } = req.body;
 
     const setFields: Record<string, any> = {};
-    if (status) setFields.status = String(status).toLowerCase();
+    if (status) {
+      setFields.status = String(status).toLowerCase();
+      if (setFields.status === "contacted") {
+        setFields.contactedAt = new Date();
+      }
+      setFields.statusUpdatedAt = new Date();
+    }
 
     if (interestLevel !== undefined || interest !== undefined) {
       const raw = interestLevel !== undefined ? interestLevel : interest;
@@ -664,6 +670,37 @@ export const adminAdvancedMonthlyReport = async (
       isDeleted: false,
     });
 
+    // ── CONTACTED IN MONTH (action-based: whether lead is old or new) ──
+    const contactedInMonthPromise = Lead.countDocuments({
+      isDeleted: false,
+      $or: [
+        { contactedAt: { $gte: startDate, $lte: endDate } },
+        {
+          contactedAt: null,
+          status: { $regex: /^contacted$/i },
+          $or: [
+            { updatedAt: { $gte: startDate, $lte: endDate } },
+            { createdAt: { $gte: startDate, $lte: endDate } },
+          ],
+        },
+      ],
+    });
+
+    const prevContactedInMonthPromise = Lead.countDocuments({
+      isDeleted: false,
+      $or: [
+        { contactedAt: { $gte: prevStartDate, $lte: prevEndDate } },
+        {
+          contactedAt: null,
+          status: { $regex: /^contacted$/i },
+          $or: [
+            { updatedAt: { $gte: prevStartDate, $lte: prevEndDate } },
+            { createdAt: { $gte: prevStartDate, $lte: prevEndDate } },
+          ],
+        },
+      ],
+    });
+
     // ── EXECUTE ALL ───────────────────────────────────────────────
     const [
       totalLeads,
@@ -677,6 +714,8 @@ export const adminAdvancedMonthlyReport = async (
       allTimeClosed,
       allTimeDueFollowups,
       allTimeTotalLeads,
+      contactedInMonth,
+      prevContactedInMonth,
     ] = await Promise.all([
       totalLeadsPromise,
       previousMonthLeadsPromise,
@@ -689,6 +728,8 @@ export const adminAdvancedMonthlyReport = async (
       allTimeClosedPromise,
       allTimeDueFollowupsPromise,
       allTimeTotalLeadsPromise,
+      contactedInMonthPromise,
+      prevContactedInMonthPromise,
     ]);
 
     // ── GROWTH % ──────────────────────────────────────────────────
@@ -715,6 +756,10 @@ export const adminAdvancedMonthlyReport = async (
 
     const byStatus     = normalizeStatus(statusCounts);
     const prevByStatus = normalizeStatus(prevStatusCounts); // ✅ NEW
+
+    // ✅ Action-based contact counts: includes both old and new leads contacted in this month
+    byStatus['Contacted']     = contactedInMonth;
+    prevByStatus['Contacted'] = prevContactedInMonth;
 
     // ── FOLLOW-UP STATS ───────────────────────────────────────────
     const followupStats = { pending: 0, overdue: 0, resolved: 0 };
@@ -744,6 +789,7 @@ export const adminAdvancedMonthlyReport = async (
         // Current month
         totalLeads,
         byStatus,
+        contactedInMonth,
 
         // All-time / DB-wide stats
         allTimeClosed,

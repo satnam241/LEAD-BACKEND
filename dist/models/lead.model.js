@@ -193,6 +193,8 @@ const LeadSchema = new mongoose_1.Schema({
         default: "new",
         index: true,
     },
+    contactedAt: { type: Date, default: null, index: true },
+    statusUpdatedAt: { type: Date, default: null, index: true },
     isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: { type: Date, default: null },
     followUp: {

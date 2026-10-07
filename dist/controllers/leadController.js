@@ -86,6 +86,7 @@ const createLeadController = async (req, res) => {
             : null;
         if (!fullName && !email && !phone)
             return res.status(400).json({ error: "Lead must include at least one of: fullName, email, or phone." });
+        const isContacted = bodyStatus && String(bodyStatus).toLowerCase() === "contacted";
         const lead = new lead_model_1.default({
             fullName, email, phone,
             phoneVerified: phoneVerified || false,
@@ -93,6 +94,8 @@ const createLeadController = async (req, res) => {
             whatIsYourBudget: finalBudget,
             message, source,
             status: bodyStatus ? String(bodyStatus).toLowerCase() : "new",
+            contactedAt: isContacted ? new Date() : null,
+            statusUpdatedAt: new Date(),
             interestLevel: finalInterest,
             followUp: bodyFollowUp || undefined,
             note: bodyNote || null, // ✅ FIX — add kiya
@@ -131,6 +134,10 @@ const updateLeadController = async (req, res) => {
         const updates = { ...req.body };
         if (updates.status) {
             updates.status = updates.status.toLowerCase();
+            if (updates.status === "contacted") {
+                updates.contactedAt = new Date();
+            }
+            updates.statusUpdatedAt = new Date();
         }
         if (Object.prototype.hasOwnProperty.call(updates, "interestLevel") || Object.prototype.hasOwnProperty.call(updates, "interest")) {
             const raw = updates.interestLevel !== undefined ? updates.interestLevel : updates.interest;

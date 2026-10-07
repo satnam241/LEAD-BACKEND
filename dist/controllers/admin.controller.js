@@ -352,8 +352,13 @@ const adminUpdateLead = async (req, res) => {
         const { id } = req.params;
         const { status, interestLevel, interest } = req.body;
         const setFields = {};
-        if (status)
+        if (status) {
             setFields.status = String(status).toLowerCase();
+            if (setFields.status === "contacted") {
+                setFields.contactedAt = new Date();
+            }
+            setFields.statusUpdatedAt = new Date();
+        }
         if (interestLevel !== undefined || interest !== undefined) {
             const raw = interestLevel !== undefined ? interestLevel : interest;
             setFields.interestLevel = raw && ["hot", "warm", "cold"].includes(String(raw).toLowerCase().trim())
@@ -652,9 +657,38 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         const allTimeTotalLeadsPromise = lead_model_1.default.countDocuments({
             isDeleted: false,
         });
+        // ── CONTACTED IN MONTH (action-based: whether lead is old or new) ──
+        const contactedInMonthPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+            $or: [
+                { contactedAt: { $gte: startDate, $lte: endDate } },
+                {
+                    contactedAt: null,
+                    status: { $regex: /^contacted$/i },
+                    $or: [
+                        { updatedAt: { $gte: startDate, $lte: endDate } },
+                        { createdAt: { $gte: startDate, $lte: endDate } },
+                    ],
+                },
+            ],
+        });
+        const prevContactedInMonthPromise = lead_model_1.default.countDocuments({
+            isDeleted: false,
+            $or: [
+                { contactedAt: { $gte: prevStartDate, $lte: prevEndDate } },
+                {
+                    contactedAt: null,
+                    status: { $regex: /^contacted$/i },
+                    $or: [
+                        { updatedAt: { $gte: prevStartDate, $lte: prevEndDate } },
+                        { createdAt: { $gte: prevStartDate, $lte: prevEndDate } },
+                    ],
+                },
+            ],
+        });
         // ── EXECUTE ALL ───────────────────────────────────────────────
         const [totalLeads, previousMonthLeads, statusCounts, prevStatusCounts, // ✅ NEW
-        sourceWise, dailyGrowth, followupCompletion, leadTemperature, allTimeClosed, allTimeDueFollowups, allTimeTotalLeads,] = await Promise.all([
+        sourceWise, dailyGrowth, followupCompletion, leadTemperature, allTimeClosed, allTimeDueFollowups, allTimeTotalLeads, contactedInMonth, prevContactedInMonth,] = await Promise.all([
             totalLeadsPromise,
             previousMonthLeadsPromise,
             statusCountsPromise,
@@ -666,6 +700,8 @@ const adminAdvancedMonthlyReport = async (req, res) => {
             allTimeClosedPromise,
             allTimeDueFollowupsPromise,
             allTimeTotalLeadsPromise,
+            contactedInMonthPromise,
+            prevContactedInMonthPromise,
         ]);
         // ── GROWTH % ──────────────────────────────────────────────────
         const growthPercentage = previousMonthLeads > 0
@@ -687,6 +723,9 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         };
         const byStatus = normalizeStatus(statusCounts);
         const prevByStatus = normalizeStatus(prevStatusCounts); // ✅ NEW
+        // ✅ Action-based contact counts: includes both old and new leads contacted in this month
+        byStatus['Contacted'] = contactedInMonth;
+        prevByStatus['Contacted'] = prevContactedInMonth;
         // ── FOLLOW-UP STATS ───────────────────────────────────────────
         const followupStats = { pending: 0, overdue: 0, resolved: 0 };
         let totalFollowups = 0;
@@ -714,6 +753,7 @@ const adminAdvancedMonthlyReport = async (req, res) => {
                 // Current month
                 totalLeads,
                 byStatus,
+                contactedInMonth,
                 // All-time / DB-wide stats
                 allTimeClosed,
                 allTimeDueFollowups,

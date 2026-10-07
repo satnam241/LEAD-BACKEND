@@ -175,6 +175,8 @@ export interface ILead extends Document {
   reminderCount?: number;
   lastReminderSent?: Date | null;
   status?: "new" | "contacted" | "interested" | "closed" | "lost" | "negotiation" | "visitor";
+  contactedAt?: Date | null;
+  statusUpdatedAt?: Date | null;
   isDeleted?: boolean;
   deletedAt?: Date | null;
   followUp?: {
@@ -232,6 +234,8 @@ const LeadSchema = new Schema<ILead>(
       default: "new",
       index: true,
     },
+    contactedAt: { type: Date, default: null, index: true },
+    statusUpdatedAt: { type: Date, default: null, index: true },
     isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: { type: Date, default: null },
     followUp: {
