@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getProjectFacts = getProjectFacts;
 exports.parsePriceToLakhs = parsePriceToLakhs;
+exports.detectLanguage = detectLanguage;
 exports.findDirectFaqAnswer = findDirectFaqAnswer;
 exports.findCrossSellProject = findCrossSellProject;
 exports.getDynamicPortfolioCatalogue = getDynamicPortfolioCatalogue;
@@ -104,40 +105,126 @@ function parsePriceToLakhs(str) {
         return parseFloat(matchLakh[1]);
     return null;
 }
+function detectLanguage(text) {
+    if (!text)
+        return 'hinglish';
+    // 1. Pure Hindi Devanagari script (Unicode range 0900-097F)
+    if (/[\u0900-\u097F]/.test(text)) {
+        return 'hindi';
+    }
+    // 2. Hinglish (Roman Hindi tokens)
+    const hinglishTokens = [
+        'kya', 'hai', 'hain', 'h', 'ka', 'ki', 'ke', 'ko', 'se', 'me', 'mein', 'par',
+        'pe', 'kitna', 'kitne', 'kitni', 'kahan', 'kaha', 'kab', 'batao', 'batayein',
+        'bhai', 'sir', 'ji', 'kr', 'karein', 'karna', 'hoga', 'hogi', 'chahiye',
+        'dekhna', 'lena', 'saste', 'sasta', 'mehenga', 'accha', 'achha', 'thik',
+        'ha', 'haan', 'nahi', 'nhi', 'na', 'bhi', 'paas', 'kaise', 'kese', 'kon',
+        'kaun', 'aap', 'tum', 'mera', 'meri', 'mere', 'hum', 'humare', 'apna',
+        'baje', 'kal', 'aaj', 'parso', 'subah', 'shaam', 'dopahar', 'raat', 'kuch',
+        'chhat', 'gadi', 'bache', 'naam', 'sun', 'suno', 'btao', 'plz', 'kripya',
+        'batana', 'pata', 'yr', 'dost', 'bhejo', 'bhejna', 'dekh', 'dekho', 'bhejiye',
+        'karwa', 'karwana', 'bolo', 'bata'
+    ];
+    const lower = text.toLowerCase();
+    const words = lower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
+    for (const w of words) {
+        if (hinglishTokens.includes(w)) {
+            return 'hinglish';
+        }
+    }
+    return 'english';
+}
 /**
  * Matches user query against trained FAQs, keywords, and core project attributes
  * Returns exact verified answer if match confidence is high, or null.
+ * Mirrors user language: English ➔ English, Hinglish ➔ Hinglish, Hindi ➔ Hindi.
  */
 function findDirectFaqAnswer(project, userMessage) {
     if (!project || !userMessage || !userMessage.trim())
         return null;
     const rawLower = userMessage.toLowerCase().trim();
     const cleanMsg = rawLower.replace(/[^\w\s\u0900-\u097F]/gi, ' ');
+    const lang = detectLanguage(userMessage);
     // ─────────────────────────────────────────────────────────────
-    // 1. TOP PRIORITY: Conversational & Small-Talk Handling
-    // MUST RUN FIRST so common words ("who are you", "how are you") never false-match FAQs!
+    // 1. TOP PRIORITY: Conversational & Small-Talk Handling (Trilingual)
     // ─────────────────────────────────────────────────────────────
-    if (/\b(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u)\b/i.test(rawLower)) {
+    if (/\b(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are)\b/i.test(rawLower)) {
+        if (lang === 'english') {
+            return `I am your dedicated Property Consultant for *${project?.name || 'this property'}* 🏡 I am here to assist you with live pricing, plot layouts, location details, and scheduling site visits. What details would you like to explore?`;
+        }
+        if (lang === 'hindi') {
+            return `मैं *${project?.name || 'प्रॉपर्टी एडवाइजरी'}* का समर्पित प्रॉपर्टी कंसलटेंट हूँ 🏡 मैं आपको इस प्रोजेक्ट की लाइव कीमतें, लेआउट, लोकेशन और साइट विजिट अरेंज करने में मदद करूँगा। आप क्या जानकारी जानना चाहेंगे?`;
+        }
         return `Main *${project?.name || 'Property Advisory'}* ka dedicated Property Consultant hoon 🏡 Main aapko is project ki live pricing, plot layouts, location aur site visit arrange karne mein guide karta hoon. Aap is property mein kya explore karna chahenge?`;
     }
     if (/\b(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho|how r u)\b/i.test(rawLower)) {
+        if (lang === 'english') {
+            return `I am doing great, thank you! 😊 Hope you are having a wonderful day. How may I assist you with *${project?.name || 'this property'}* today? Would you like to check pricing or unit sizes?`;
+        }
+        if (lang === 'hindi') {
+            return `मैं बिल्कुल कुशलपूर्वक हूँ, धन्यवाद! 😊 आशा है आप भी सपरिवार कुशल होंगे। मैं *${project?.name || 'इस प्रोजेक्ट'}* के संबंध में आपकी क्या सहायता कर सकता हूँ? क्या आप कीमत या प्लॉट साइज देखना चाहेंगे?`;
+        }
         return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *${project?.name || 'is project'}* ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
     }
     if (/\b(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today)\b/i.test(rawLower)) {
+        if (lang === 'english') {
+            return `Haha, I cannot check the weather forecast as I'm the Real Estate Advisor for *${project?.name || 'this property'}*! 🌤️ But I can definitely guide you on plot pricing, connectivity, and scheduling a site visit. Would you like to explore location or unit sizes?`;
+        }
+        if (lang === 'hindi') {
+            return `मौसम का हाल तो मैं नहीं बता सकता क्योंकि मैं *${project?.name || 'प्रॉपर्टी'}* का रियल एस्टेट एडवाइजर हूँ! 🌤️ लेकिन यहाँ प्लॉट्स की कीमत, लोकेशन और साइट विजिट के बारे में पूरी जानकारी दे सकता हूँ। क्या आप लोकेशन या प्लॉट साइज जानना चाहेंगे?`;
+        }
         return `Haha, main weather forecast toh nahi bata sakta kyunki main *${project?.name || 'Property'}* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan plots ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
     }
     if (/\b(thanks|thank you|shukriya|dhanyawad|thx)\b/i.test(rawLower)) {
+        if (lang === 'english') {
+            return `You're most welcome! 🤝 Feel free to let me know if you have any questions about *${project?.name || 'this property'}* or wish to plan a site visit.`;
+        }
+        if (lang === 'hindi') {
+            return `आपका बहुत-बहुत स्वागत है! 🤝 यदि *${project?.name || 'इस प्रॉपर्टी'}* के बारे में कोई अन्य सवाल हो या साइट विजिट प्लान करनी हो, तो अवश्य बताएं।`;
+        }
         return `Most welcome! 🤝 Agar *${project?.name || 'is property'}* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
     }
     if (/\b(joke|jokes|gana|song|movie|film|cricket|match|modi|politics)\b/i.test(rawLower)) {
+        if (lang === 'english') {
+            return `Haha, my entire focus is on helping you find your dream home at *${project?.name || 'our property'}*! 🏡 Shall we discuss pricing or schedule a site visit?`;
+        }
+        if (lang === 'hindi') {
+            return `हाँ, मेरा पूरा ध्यान तो आपको *${project?.name || 'हमारे प्रोजेक्ट'}* में बेहतरीन प्रॉपर्टी दिलाने पर है! 🏡 क्या हम कीमत या साइट विजिट के बारे में बात करें?`;
+        }
         return `Haha, mera poora focus toh aapko *${project?.name || 'hamare project'}* mein best property dilwane par hai! 🏡 Kya hum pricing ya site visit ke baare mein baat karein?`;
     }
     // ─────────────────────────────────────────────────────────────
     // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
     // ─────────────────────────────────────────────────────────────
-    const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing'].some(w => rawLower.includes(w));
+    const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing', 'rate kya'].some(w => rawLower.includes(w));
     if (isAskingPrice && project.priceRange) {
-        let priceReply = `The price range for *${project.name}* is *${project.priceRange}*.`;
+        if (lang === 'english') {
+            let priceReply = `The price range for *${project.name}* starts from *${project.priceRange}*.`;
+            if (project.unitTypes && project.unitTypes.length > 0) {
+                const unitDetails = project.unitTypes
+                    .filter((u) => u.priceFrom)
+                    .map((u) => `• ${u.type}: Starting from ${u.priceFrom}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`)
+                    .join('\n');
+                if (unitDetails)
+                    priceReply += `\n\n${unitDetails}`;
+            }
+            priceReply += `\n\nAre you looking for self-use or investment purpose? 🏡`;
+            return priceReply;
+        }
+        if (lang === 'hindi') {
+            let priceReply = `*${project.name}* में कीमतें *${project.priceRange}* से शुरू होती हैं।`;
+            if (project.unitTypes && project.unitTypes.length > 0) {
+                const unitDetails = project.unitTypes
+                    .filter((u) => u.priceFrom)
+                    .map((u) => `• ${u.type}: शुरुआती दर ${u.priceFrom}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`)
+                    .join('\n');
+                if (unitDetails)
+                    priceReply += `\n\n${unitDetails}`;
+            }
+            priceReply += `\n\nक्या आप यह प्रॉपर्टी खुद रहने के लिए देख रहे हैं या निवेश के लिए? 🏡`;
+            return priceReply;
+        }
+        let priceReply = `*${project.name}* mein price starting *${project.priceRange}* se hai.`;
         if (project.unitTypes && project.unitTypes.length > 0) {
             const unitDetails = project.unitTypes
                 .filter((u) => u.priceFrom)
@@ -146,22 +233,41 @@ function findDirectFaqAnswer(project, userMessage) {
             if (unitDetails)
                 priceReply += `\n\n${unitDetails}`;
         }
+        priceReply += `\n\nAap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye? 🏡`;
         return priceReply;
     }
-    const isAskingLocation = ['location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated', 'landmark', 'pataa', 'site kahan'].some(w => rawLower.includes(w));
+    const isAskingLocation = ['location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated', 'landmark', 'pataa', 'site kahan', 'site address'].some(w => rawLower.includes(w));
     if (isAskingLocation && project.location) {
-        return `*${project.name}* is located at *${project.location}*.\nWould you like more details on nearby connectivity or a site visit?`;
+        if (lang === 'english') {
+            return `*${project.name}* is located at *${project.location}*.\n\nWould you like more details on nearby connectivity, or shall we arrange a site visit this weekend? 🏡`;
+        }
+        if (lang === 'hindi') {
+            return `*${project.name}* प्राइम लोकेशन *${project.location}* पर स्थित है।\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें? 🏡`;
+        }
+        return `*${project.name}* prime location par situated hai — *${project.location}*.\n\nKya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
     }
     const isAskingPossession = ['possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover', 'completion'].some(w => rawLower.includes(w));
     if (isAskingPossession && project.possession) {
-        return `The possession timeline for *${project.name}* is *${project.possession}*.`;
+        if (lang === 'english') {
+            return `The possession timeline for *${project.name}* is *${project.possession}*.\n\nWould you like to schedule a site visit to inspect ongoing development? 🏡`;
+        }
+        if (lang === 'hindi') {
+            return `*${project.name}* का पजेशन टाइमलाइन *${project.possession}* है।\n\nक्या आप कंस्ट्रक्शन क्वालिटी देखने के लिए साइट विजिट प्लान करना चाहेंगे? 🏡`;
+        }
+        return `*${project.name}* ka possession timeline *${project.possession}* hai.\n\nKya aap construction quality aur development dekhne ke liye site visit arrange karna chahenge? 🏡`;
     }
-    const isAskingSizes = ['size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration', 'space', 'layouts'].some(w => rawLower.includes(w));
+    const isAskingSizes = ['size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration', 'space', 'layouts', 'plot size'].some(w => rawLower.includes(w));
     if (isAskingSizes && project.unitTypes && project.unitTypes.length > 0) {
         const unitList = project.unitTypes
             .map((u) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` — Rate: ${u.priceFrom}` : ''}`)
             .join('\n');
-        return `Available configurations at *${project.name}*:\n\n${unitList}\n\nWhich configuration best suits your requirement?`;
+        if (lang === 'english') {
+            return `Available configurations at *${project.name}*:\n\n${unitList}\n\nWhich configuration best suits your requirement?`;
+        }
+        if (lang === 'hindi') {
+            return `*${project.name}* में उपलब्ध साइज और कॉन्फ़िगरेशन:\n\n${unitList}\n\nआपकी पसंद कौन से साइज के लिए है?`;
+        }
+        return `*${project.name}* mein available configurations:\n\n${unitList}\n\nAapki requirement kis configuration ya size ke liye best rahegi?`;
     }
     // ─────────────────────────────────────────────────────────────
     // 3. Trained FAQs Matcher (With Stop-Word Filtering & High Confidence)

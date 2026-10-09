@@ -1,6 +1,6 @@
 import mongoose, { Types } from 'mongoose';
 import { askLLMSafe, LLMMessage } from './llmService';
-import { getProjectFacts, getDynamicPortfolioCatalogue, findDirectFaqAnswer, findCrossSellProject } from './projectKnowledgeService';
+import { getProjectFacts, getDynamicPortfolioCatalogue, findDirectFaqAnswer, findCrossSellProject, detectLanguage } from './projectKnowledgeService';
 import ConversationMessage from '../models/conversationMessage.model';
 import ConversationState from '../models/conversationState.model';
 import Lead from '../models/lead.model';
@@ -234,6 +234,8 @@ export async function buildMessages(
   currentMessage: string,
   contextNote?: string
 ): Promise<LLMMessage[]> {
+  const detectedLang = detectLanguage(currentMessage);
+
   const [projectFacts, dynamicPortfolio, leadDoc] = await Promise.all([
     getProjectFacts(projectId, currentMessage),
     getDynamicPortfolioCatalogue(projectId),
@@ -260,6 +262,16 @@ export async function buildMessages(
 You represent our real estate advisory firm. You possess deep property sales intelligence, emotional EQ, and sharp consultative selling skills. You strictly ground all factual details (pricing, location, configurations, possession, RERA) in the database information provided below.
 
 ════════════════════════════════════════════════════════════════════════════════
+🌐 CURRENT USER INQUIRY LANGUAGE DETECTED: [ ${detectedLang.toUpperCase()} ]
+════════════════════════════════════════════════════════════════════════════════
+MANDATORY LANGUAGE MIRRORING RULE (HIGHEST PRIORITY):
+- The buyer asked their question in ${detectedLang.toUpperCase()}.
+- You MUST generate your response STRICTLY in ${detectedLang.toUpperCase()}!
+  * If ENGLISH: Respond in polished, professional, courteous British/Indian English.
+  * If HINGLISH: Respond in natural, polite, respectful Hinglish (Roman Hindi) like a top Indian property consultant.
+  * If HINDI: Respond in pure, respectful Devanagari Hindi.
+
+════════════════════════════════════════════════════════════════════════════════
 PROSPECTIVE BUYER INQUIRY SOURCE & CONTEXT:
 ════════════════════════════════════════════════════════════════════════════════
 • Lead Name: ${leadDoc?.fullName || 'Prospective Buyer'}
@@ -284,9 +296,8 @@ ${dynamicPortfolio}
 🧠 CORE REAL ESTATE INTELLIGENCE & BEHAVIOR RULES (STRICTLY ENFORCE):
 ════════════════════════════════════════════════════════════════════════════════
 
-1. 🗣️ LANGUAGE & NATURAL TONE MATCHING (HINGLISH / ENGLISH):
-   - Mirror the buyer's language naturally. If the buyer chats in Hinglish or Hindi (e.g., "price kitna hai", "kuch discount milega", "kahan par hai"), respond in natural, courteous, respectful, and fluent Hinglish like a top Indian property consultant.
-   - If the buyer asks in English, respond in polished, professional English.
+1. 🗣️ LANGUAGE & NATURAL TONE MATCHING:
+   - Always adhere to the [ ${detectedLang.toUpperCase()} ] mode.
    - Keep the tone warm, consultative, and human-like — NEVER sound like an automated robotic IVR or generic FAQ bot.
 
 2. 💡 DECODE INTENT, TYPOS, AND MESSY TEXT (USE YOUR OWN BRAIN):
