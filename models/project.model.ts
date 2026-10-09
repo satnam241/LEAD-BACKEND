@@ -30,6 +30,10 @@ export interface IProject extends Document {
   doNotSay: string[];
   faqs: IProjectFAQ[];
   welcomeMessage?: string;
+  images?: string[];
+  videos?: string[];
+  map?: string;
+  brochure?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -72,6 +76,10 @@ const ProjectSchema = new Schema<IProject>(
     doNotSay: [{ type: String, trim: true }],
     faqs: [ProjectFAQSchema],
     welcomeMessage: { type: String, default: '', trim: true },
+    images: [{ type: String, trim: true }],
+    videos: [{ type: String, trim: true }],
+    map: { type: String, default: '', trim: true },
+    brochure: { type: String, default: '', trim: true },
     isActive: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }

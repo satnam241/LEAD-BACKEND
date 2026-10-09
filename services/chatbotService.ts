@@ -269,59 +269,40 @@ export async function sendReadWelcomeWithButtons(phone: string, lead: any): Prom
       }
     }
 
-    const leadName = lead.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? ` ${lead.fullName}` : '';
-    let greeting = (project?.welcomeMessage && project.welcomeMessage.trim())
-      ? project.welcomeMessage.trim()
-      : `Hello${leadName}! 👋 Welcome to *${project?.name || 'Property Advisory'}* 🏡`;
-    greeting = greeting.replace(/{{name}}/gi, leadName.trim() || 'there');
+    const leadName = lead.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
 
-    if (steps && steps.length > 0) {
-      const firstStep = steps[0];
-      const questionText = `${greeting}\n\n${firstStep.question}`;
+    // Check project-specific message or Universal First Message for ALL leads
+    let greeting = (project?.welcomeMessage && project.welcomeMessage.trim()) ? project.welcomeMessage.trim() : '';
+    if (!greeting) {
+      const { getGlobalWelcomeMessage } = await import('./botSettingService');
+      greeting = await getGlobalWelcomeMessage();
+    }
 
-      await ConversationState.deleteMany({
-        $or: [{ phone }, { leadId: lead._id }],
-      });
+    if (greeting) {
+      greeting = greeting.replace(/{{name}}/gi, leadName || '').trim();
+    }
 
-      await ConversationState.create({
-        leadId: lead._id,
-        phone,
-        activeProjectId: project?._id || null,
-        currentStep: firstStep.stepKey,
-        answers: [],
-        attemptCount: 0,
-        deliveryStatus: 'read',
-        startedAt: new Date(),
-        lastActiveAt: new Date(),
-      });
-
-      console.log(`[Chatbot] 🚀 Auto-sending Step 1 Question with Buttons to ${phone}: "${firstStep.question}"`);
-      await sendInteractiveButtons(
-        phone,
-        questionText,
-        firstStep.options,
-        project?.name || 'Real Estate Assistant 🏡',
-        'Tap an option button below'
-      );
-    } else {
-      await ConversationState.findOneAndUpdate(
-        { leadId: lead._id },
-        {
-          $set: {
-            phone,
-            activeProjectId: project?._id || null,
-            currentStep: 'completed',
-            deliveryStatus: 'read',
-            lastActiveAt: new Date(),
-          },
-          $setOnInsert: { startedAt: new Date(), attemptCount: 0 },
+    // Always set state to completed (natural simple chat mode)
+    await ConversationState.findOneAndUpdate(
+      { leadId: lead._id },
+      {
+        $set: {
+          phone,
+          activeProjectId: project?._id || null,
+          currentStep: 'completed',
+          deliveryStatus: 'read',
+          lastActiveAt: new Date(),
         },
-        { upsert: true }
-      );
-      await sendText(
-        phone,
-        `${greeting}\n\nHow can I assist you with this property today? Feel free to ask about location, pricing, unit sizes, or schedule a site visit.`
-      );
+        $setOnInsert: { startedAt: new Date(), attemptCount: 0 },
+      },
+      { upsert: true }
+    );
+
+    // Send purely as simple text chat — NO BUTTONS!
+    // (Buttons will only be sent when an admin dispatches a WhatsApp campaign)
+    if (greeting) {
+      console.log(`[Chatbot] 🚀 Sending simple first welcome text to ${phone} (No buttons): "${greeting.slice(0, 60)}..."`);
+      await sendText(phone, greeting);
     }
   } catch (err: any) {
     console.error('[Chatbot] ❌ Error sending read welcome with buttons:', err?.message || err);

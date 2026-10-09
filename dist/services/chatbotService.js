@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -218,43 +251,32 @@ async function sendReadWelcomeWithButtons(phone, lead) {
                 project = activeProjects[0];
             }
         }
-        const leadName = lead.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? ` ${lead.fullName}` : '';
-        let greeting = (project?.welcomeMessage && project.welcomeMessage.trim())
-            ? project.welcomeMessage.trim()
-            : `Hello${leadName}! 👋 Welcome to *${project?.name || 'Property Advisory'}* 🏡`;
-        greeting = greeting.replace(/{{name}}/gi, leadName.trim() || 'there');
-        if (steps && steps.length > 0) {
-            const firstStep = steps[0];
-            const questionText = `${greeting}\n\n${firstStep.question}`;
-            await conversationState_model_1.default.deleteMany({
-                $or: [{ phone }, { leadId: lead._id }],
-            });
-            await conversationState_model_1.default.create({
-                leadId: lead._id,
+        const leadName = lead.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
+        // Check project-specific message or Universal First Message for ALL leads
+        let greeting = (project?.welcomeMessage && project.welcomeMessage.trim()) ? project.welcomeMessage.trim() : '';
+        if (!greeting) {
+            const { getGlobalWelcomeMessage } = await Promise.resolve().then(() => __importStar(require('./botSettingService')));
+            greeting = await getGlobalWelcomeMessage();
+        }
+        if (greeting) {
+            greeting = greeting.replace(/{{name}}/gi, leadName || '').trim();
+        }
+        // Always set state to completed (natural simple chat mode)
+        await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+            $set: {
                 phone,
                 activeProjectId: project?._id || null,
-                currentStep: firstStep.stepKey,
-                answers: [],
-                attemptCount: 0,
+                currentStep: 'completed',
                 deliveryStatus: 'read',
-                startedAt: new Date(),
                 lastActiveAt: new Date(),
-            });
-            console.log(`[Chatbot] 🚀 Auto-sending Step 1 Question with Buttons to ${phone}: "${firstStep.question}"`);
-            await (0, baileysService_1.sendInteractiveButtons)(phone, questionText, firstStep.options, project?.name || 'Real Estate Assistant 🏡', 'Tap an option button below');
-        }
-        else {
-            await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-                $set: {
-                    phone,
-                    activeProjectId: project?._id || null,
-                    currentStep: 'completed',
-                    deliveryStatus: 'read',
-                    lastActiveAt: new Date(),
-                },
-                $setOnInsert: { startedAt: new Date(), attemptCount: 0 },
-            }, { upsert: true });
-            await (0, baileysService_1.sendText)(phone, `${greeting}\n\nHow can I assist you with this property today? Feel free to ask about location, pricing, unit sizes, or schedule a site visit.`);
+            },
+            $setOnInsert: { startedAt: new Date(), attemptCount: 0 },
+        }, { upsert: true });
+        // Send purely as simple text chat — NO BUTTONS!
+        // (Buttons will only be sent when an admin dispatches a WhatsApp campaign)
+        if (greeting) {
+            console.log(`[Chatbot] 🚀 Sending simple first welcome text to ${phone} (No buttons): "${greeting.slice(0, 60)}..."`);
+            await (0, baileysService_1.sendText)(phone, greeting);
         }
     }
     catch (err) {

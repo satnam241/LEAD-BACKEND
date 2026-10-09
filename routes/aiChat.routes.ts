@@ -13,6 +13,7 @@ import {
   deleteTrainingFaq,
   getFirstMessage,
   setFirstMessage,
+  deleteFirstMessage,
   testAiQuery,
 } from '../controllers/aiChat.controller';
 
@@ -30,9 +31,12 @@ router.post('/train', adminAuth, insertTrainingData);
 router.put('/training-data/:projectId/:faqIndex', adminAuth, updateTrainingFaq);
 router.delete('/training-data/:projectId/:faqIndex', adminAuth, deleteTrainingFaq);
 
-// First Message Configuration ("Pehle kya msg krna h")
+// First Message Configuration ("Pehle kya msg krna h") - Full CRUD
 router.get('/first-message', adminAuth, getFirstMessage);
 router.post('/first-message', adminAuth, setFirstMessage);
+router.put('/first-message', adminAuth, setFirstMessage);
+router.delete('/first-message', adminAuth, deleteFirstMessage);
+router.delete('/first-message/:projectId', adminAuth, deleteFirstMessage);
 
 // Auto-Learned Questions
 router.get('/learned-questions', adminAuth, listLearnedQuestions);

@@ -69,6 +69,27 @@ exports.resolveTemplateText = resolveTemplateText;
  */
 const getResolvedDefaultMessage = async (lead) => {
     try {
+        const leadName = lead?.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
+        // 1. Highest Priority: Universal First Message configured by Admin for ALL leads
+        const { getGlobalWelcomeMessage } = await Promise.resolve().then(() => __importStar(require('../services/botSettingService')));
+        const globalMsg = await getGlobalWelcomeMessage();
+        if (globalMsg && globalMsg.trim()) {
+            return globalMsg
+                .replace(/{{name}}/gi, leadName || '')
+                .replace(/{{leadName}}/gi, leadName || '')
+                .trim();
+        }
+        // 2. Second Priority: Project-specific welcome message
+        if (lead?.projectId && lead.projectId.welcomeMessage) {
+            const projMsg = lead.projectId.welcomeMessage.trim();
+            if (projMsg) {
+                return projMsg
+                    .replace(/{{name}}/gi, leadName || '')
+                    .replace(/{{leadName}}/gi, leadName || '')
+                    .trim();
+            }
+        }
+        // 3. Third Priority: Template marked as default in templates collection
         const Template = (await Promise.resolve().then(() => __importStar(require('../models/template.model')))).default;
         let tmpl = await Template.findOne({ isDefault: true }).lean();
         if (!tmpl) {
@@ -76,11 +97,11 @@ const getResolvedDefaultMessage = async (lead) => {
         }
         if (tmpl && tmpl.bodyText) {
             const vars = {
-                '1': lead?.fullName || 'there',
+                '1': leadName || 'there',
                 '2': (lead?.projectId && lead.projectId.name) || 'our properties',
                 '3': lead?.whatIsYourBudget || '',
-                name: lead?.fullName || 'there',
-                leadName: lead?.fullName || 'there',
+                name: leadName || 'there',
+                leadName: leadName || 'there',
                 phone: lead?.phone || '',
                 email: lead?.email || '',
                 project: (lead?.projectId && lead.projectId.name) || 'our properties',
@@ -92,7 +113,7 @@ const getResolvedDefaultMessage = async (lead) => {
                 tmpl.variables.forEach((vName, idx) => {
                     const varIndex = String(idx + 1);
                     if (vName === 'name' || vName === 'fullName')
-                        vars[varIndex] = lead?.fullName || 'there';
+                        vars[varIndex] = leadName || 'there';
                     else if (vName === 'project' || vName === 'propertyName')
                         vars[varIndex] = (lead?.projectId && lead.projectId.name) || 'our properties';
                     else if (vName === 'budget')
@@ -107,7 +128,8 @@ const getResolvedDefaultMessage = async (lead) => {
     catch (err) {
         console.error('Error resolving dynamic default template:', err);
     }
-    return (0, exports.getDefaultMessage)(lead?.fullName);
+    // If admin has not configured any first message, return empty string so no canned default is sent
+    return '';
 };
 exports.getResolvedDefaultMessage = getResolvedDefaultMessage;
 //# sourceMappingURL=messageTemplates.js.map

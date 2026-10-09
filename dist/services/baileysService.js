@@ -526,13 +526,34 @@ async function sendMedia(phone, mediaUrl, caption) {
     }
     try {
         console.log(`[Baileys] 📤 Sending media message to ${jid}: ${mediaUrl}...`);
-        const imagePayload = await resolveMediaPayload(mediaUrl);
-        const result = await sock.sendMessage(jid, {
-            image: imagePayload,
-            caption: caption ? caption.trim() : '',
-        });
+        const payload = await resolveMediaPayload(mediaUrl);
+        const cleanUrl = mediaUrl.toLowerCase().split('?')[0];
+        const isVideo = cleanUrl.endsWith('.mp4') || cleanUrl.endsWith('.mov') || cleanUrl.endsWith('.webm') || cleanUrl.endsWith('.mkv');
+        const isPdf = cleanUrl.endsWith('.pdf');
+        let messagePayload;
+        if (isVideo) {
+            messagePayload = {
+                video: payload,
+                caption: caption ? caption.trim() : '',
+            };
+        }
+        else if (isPdf) {
+            messagePayload = {
+                document: payload,
+                mimetype: 'application/pdf',
+                fileName: path_1.default.basename(mediaUrl.split('?')[0]) || 'Project_Document.pdf',
+                caption: caption ? caption.trim() : '',
+            };
+        }
+        else {
+            messagePayload = {
+                image: payload,
+                caption: caption ? caption.trim() : '',
+            };
+        }
+        const result = await sock.sendMessage(jid, messagePayload);
         const waMessageId = result?.key?.id ?? undefined;
-        console.log(`[Baileys] ✅ Media sent to ${jid} (ID: ${waMessageId})`);
+        console.log(`[Baileys] ✅ Media (${isVideo ? 'Video' : isPdf ? 'PDF' : 'Image'}) sent to ${jid} (ID: ${waMessageId})`);
         return { success: true, waMessageId };
     }
     catch (err) {

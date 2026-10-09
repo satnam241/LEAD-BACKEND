@@ -225,21 +225,27 @@ export async function deleteTrainingFaq(req: Request, res: Response): Promise<vo
 // GET /api/ai-chat/first-message - Get configured first message & Step 1 question
 export async function getFirstMessage(req: Request, res: Response): Promise<void> {
   try {
+    const { getGlobalWelcomeMessage } = await import('../services/botSettingService');
+    const globalWelcome = await getGlobalWelcomeMessage();
+
     const projectId = req.query.projectId as string;
     let project = null;
     if (projectId) {
       project = await Project.findById(projectId).select('name welcomeMessage').lean();
-    } else {
-      project = await Project.findOne({ isActive: true }).select('name welcomeMessage').lean();
     }
 
     const firstStep = await BotFlow.findOne({ isActive: true }).sort({ stepOrder: 1 }).lean();
 
+    const resolvedWelcome = (projectId && project?.welcomeMessage && project.welcomeMessage.trim())
+      ? project.welcomeMessage.trim()
+      : globalWelcome;
+
     res.json({
       success: true,
-      projectName: project?.name || 'Default Project',
-      welcomeMessage: project?.welcomeMessage || '',
-      step1Question: firstStep?.question || '',
+      globalWelcomeMessage: globalWelcome,
+      projectName: project?.name || 'All Leads (Universal)',
+      welcomeMessage: resolvedWelcome,
+      step1Question: firstStep?.question || 'Which property type interests you?',
       step1Options: firstStep?.options || [],
     });
   } catch (err: any) {
@@ -251,18 +257,20 @@ export async function getFirstMessage(req: Request, res: Response): Promise<void
 export async function setFirstMessage(req: Request, res: Response): Promise<void> {
   try {
     const { projectId, welcomeMessage, step1Question, step1Options } = req.body;
+    const { setGlobalWelcomeMessage } = await import('../services/botSettingService');
 
-    // Update project welcomeMessage if provided
     let project = null;
     if (welcomeMessage !== undefined) {
-      if (projectId) {
+      if (!projectId) {
+        // Universal First Message for ALL leads!
+        await setGlobalWelcomeMessage(welcomeMessage);
+      } else {
+        // Project-specific override
         project = await Project.findByIdAndUpdate(
           projectId,
           { $set: { welcomeMessage: welcomeMessage.trim() } },
           { new: true }
         );
-      } else {
-        await Project.updateMany({}, { $set: { welcomeMessage: welcomeMessage.trim() } });
       }
     }
 
@@ -282,13 +290,43 @@ export async function setFirstMessage(req: Request, res: Response): Promise<void
 
     res.json({
       success: true,
-      message: 'First message settings updated successfully',
+      message: !projectId
+        ? 'Universal First Message saved for ALL leads successfully'
+        : 'First message updated for project successfully',
       welcomeMessage,
       project,
       step1: updatedStep1,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || 'Failed to update first message' });
+  }
+}
+
+// DELETE /api/ai-chat/first-message or /api/ai-chat/first-message/:projectId - Clear/delete welcome message
+export async function deleteFirstMessage(req: Request, res: Response): Promise<void> {
+  try {
+    const projectId = (req.params.projectId || req.query.projectId || req.body?.projectId) as string;
+    const { setGlobalWelcomeMessage } = await import('../services/botSettingService');
+
+    let project = null;
+    if (!projectId) {
+      await setGlobalWelcomeMessage('');
+      await Project.updateMany({}, { $set: { welcomeMessage: '' } });
+    } else {
+      project = await Project.findByIdAndUpdate(
+        projectId,
+        { $set: { welcomeMessage: '' } },
+        { new: true }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'First welcome message cleared/deleted successfully',
+      project,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to delete first message' });
   }
 }
 

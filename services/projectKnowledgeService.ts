@@ -148,8 +148,17 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
   const lang = detectLanguage(userMessage);
 
   // ─────────────────────────────────────────────────────────────
-  // 1. TOP PRIORITY: Conversational & Small-Talk Handling (Trilingual)
+  // 1. TOP PRIORITY: Conversational & Small-Talk Handling
   // ─────────────────────────────────────────────────────────────
+
+  // FIRST MESSAGE & INITIAL GREETINGS
+  if (/^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(rawLower) && rawLower.split(/\s+/).length <= 4) {
+    if (project?.welcomeMessage && project.welcomeMessage.trim()) {
+      return project.welcomeMessage.trim();
+    }
+    return null;
+  }
+
   if (/(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are|आप कौन|तुम कौन|क्या नाम|कौन हो|कौन हैं)/i.test(rawLower)) {
     if (lang === 'english') {
       return `I am your dedicated Property Consultant for *${project?.name || 'this property'}* 🏡 I am here to assist you with live pricing, plot layouts, location details, and scheduling site visits. What details would you like to explore?`;

@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isHandoffRequested = isHandoffRequested;
 exports.isSiteVisitIntent = isSiteVisitIntent;
+exports.detectMediaRequest = detectMediaRequest;
 exports.parseSlotDateTime = parseSlotDateTime;
 exports.cleanWhatsAppReply = cleanWhatsAppReply;
 exports.buildMessages = buildMessages;
@@ -52,6 +53,7 @@ const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
 const chatbotService_1 = require("./chatbotService");
 const aiLearningService_1 = require("./aiLearningService");
 const emailService_1 = require("./emailService");
+const baileysService_1 = require("./baileysService");
 const AI_HISTORY_MESSAGES = parseInt(process.env.AI_HISTORY_MESSAGES || '6', 10);
 const AI_MAX_REPLY_CHARS = parseInt(process.env.AI_MAX_REPLY_CHARS || '600', 10);
 // Only explicit requests to speak with a human/agent/manager trigger handoff
@@ -107,6 +109,24 @@ function isSiteVisitIntent(text) {
         'प्रॉपर्टी देखना',
     ];
     return siteKeywords.some(kw => lower.includes(kw));
+}
+function detectMediaRequest(text) {
+    if (!text)
+        return null;
+    const lower = text.toLowerCase();
+    // 1. Videos / Walkthrough
+    if (/(video|walkthrough|sample flat video|site video|tour video|tour|वीडियो|विडियो|वॉकथ्रू)/i.test(lower)) {
+        return 'videos';
+    }
+    // 2. Map / Master plan / Layout
+    if (/(map|layout|master plan|site plan|location map|naksha|masterplan|नक्शा|मैप|मास्टर प्लान|लेआउट)/i.test(lower)) {
+        return 'map';
+    }
+    // 3. Images / Photos
+    if (/(photo|photos|image|images|picture|pictures|pic|pics|tasveer|tasveerein|फोटो|तस्वीर|तस्वीरें)/i.test(lower)) {
+        return 'images';
+    }
+    return null;
 }
 /**
  * Intelligent slot parser for Real Estate WhatsApp conversations.
@@ -307,11 +327,14 @@ You represent our real estate advisory firm. You possess deep property sales int
 🌐 CURRENT USER INQUIRY LANGUAGE DETECTED: [ ${detectedLang.toUpperCase()} ]
 ════════════════════════════════════════════════════════════════════════════════
 MANDATORY LANGUAGE MIRRORING RULE (HIGHEST PRIORITY):
-- The buyer asked their question in ${detectedLang.toUpperCase()}.
-- You MUST generate your response STRICTLY in ${detectedLang.toUpperCase()}!
-  * If ENGLISH: Respond in polished, professional, courteous British/Indian English.
-  * If HINGLISH: Respond in natural, polite, respectful Hinglish (Roman Hindi) like a top Indian property consultant.
-  * If HINDI: Respond in pure, respectful Devanagari Hindi.
+- FIRST MESSAGE & INITIAL GREETING RULE (ABSOLUTE REQUIREMENT):
+  * When sending the FIRST message, welcome greeting, or responding to an initial greeting ("hi", "hello", "hello sir", "hey"), your response MUST ALWAYS BE IN 100% POLISHED, PROFESSIONAL ENGLISH!
+  * Example: "Hello! 👋 Welcome to *${leadDoc?.fullName ? `*` : ''}${formName}*. Thank you for inquiring! How can I assist you today? Feel free to ask about pricing, location, plot sizes, or schedule a site visit."
+- SUBSEQUENT CONVERSATION LANGUAGE MIRRORING:
+  * If the buyer asks specific property questions in HINGLISH: Respond in natural, polite Hinglish.
+  * If the buyer asks specific property questions in PURE DEVANAGARI HINDI: Respond in pure Devanagari Hindi.
+  * If the buyer asks in ENGLISH: Respond in English.
+  * CURRENT DETECTED MODE: [ ${detectedLang.toUpperCase()} ]
 
 ════════════════════════════════════════════════════════════════════════════════
 PROSPECTIVE BUYER INQUIRY SOURCE & CONTEXT:
@@ -521,7 +544,125 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
             return { reply: slotOfferReply, needsAgent: false, aiPaused: false };
         }
     }
-    // 3. Check for explicit human agent / callback request
+    // 3. 📸 🎥 🗺️ MEDIA DISPATCH ENGINE (Images, Videos, Map)
+    const mediaReq = detectMediaRequest(text);
+    if (mediaReq && projectDoc) {
+        const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+        if (mediaReq === 'images') {
+            const images = Array.isArray(projectDoc.images) ? projectDoc.images.filter(Boolean) : [];
+            if (images.length > 0) {
+                for (let i = 0; i < Math.min(images.length, 3); i++) {
+                    const caption = i === 0 ? `📸 *${projectDoc.name}* • Sample Flat & Site Photo` : undefined;
+                    await (0, baileysService_1.sendMedia)(phone, images[i], caption).catch(() => { });
+                }
+                let replyText = `Yeh rahe *${projectDoc.name}* ke latest sample flat aur site photos! 📸\n\nKya hum is weekend par aapka sample flat visit schedule karein taaki aap quality khud dekh sakein? 🏡`;
+                if (lang === 'english') {
+                    replyText = `Here are the latest sample flat and site photos for *${projectDoc.name}*! 📸\n\nWould you like to schedule a site visit this weekend to experience the quality in person? 🏡`;
+                }
+                else if (lang === 'hindi') {
+                    replyText = `पेश हैं *${projectDoc.name}* के लेटेस्ट सैंपल फ्लैट और साइट के फोटो! 📸\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें ताकि आप कंस्ट्रक्शन क्वालिटी खुद देख सकें? 🏡`;
+                }
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: replyText, createdAt: new Date() },
+                ]);
+                await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+                    $set: {
+                        lastMessageFromUser: text,
+                        lastMessageAt: new Date(),
+                        lastActiveAt: new Date(),
+                        activeProjectId: projectId,
+                    },
+                    $inc: { attemptCount: 1 },
+                }, { upsert: true, new: true });
+                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+                return { reply: replyText, needsAgent: false, aiPaused: false };
+            }
+            else {
+                let fallbackText = `Humne *${projectDoc.name}* ke photos ki request note kar li hai! Hamari sales team aapko WhatsApp par gallery thodi der mein share kar degi 📸\n\nKya hum is weekend par aapka sample flat visit schedule karein? 🏡`;
+                if (lang === 'english') {
+                    fallbackText = `We have noted your request for photos of *${projectDoc.name}*! Our team will share the photo gallery on this WhatsApp chat shortly 📸\n\nWould you also like to schedule a site visit this weekend? 🏡`;
+                }
+                else if (lang === 'hindi') {
+                    fallbackText = `हमने *${projectDoc.name}* के फोटो की आपकी रिक्वेस्ट नोट कर ली है! हमारी टीम जल्द ही व्हाट्सएप पर फोटो शेयर करेगी 📸\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें? 🏡`;
+                }
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: fallbackText, createdAt: new Date() },
+                ]);
+                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+                return { reply: fallbackText, needsAgent: false, aiPaused: false };
+            }
+        }
+        if (mediaReq === 'videos') {
+            const videos = Array.isArray(projectDoc.videos) ? projectDoc.videos.filter(Boolean) : [];
+            if (videos.length > 0) {
+                await (0, baileysService_1.sendMedia)(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`).catch(() => { });
+                let replyText = `Yeh raha *${projectDoc.name}* ka walkthrough video! 🎥\n\nKya aap actual site dekhne ke liye is weekend par private site visit schedule karna chahenge? 🏡`;
+                if (lang === 'english') {
+                    replyText = `Here is the official walkthrough video for *${projectDoc.name}*! 🎥\n\nWould you like to schedule a private site visit this weekend to tour the property in person? 🏡`;
+                }
+                else if (lang === 'hindi') {
+                    replyText = `पेश है *${projectDoc.name}* का वॉकथ्रू वीडियो! 🎥\n\nक्या आप प्रॉपर्टी खुद देखने के लिए इस सप्ताहांत साइट विजिट प्लान करना चाहेंगे? 🏡`;
+                }
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: replyText, createdAt: new Date() },
+                ]);
+                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+                return { reply: replyText, needsAgent: false, aiPaused: false };
+            }
+            else {
+                let fallbackText = `Humne *${projectDoc.name}* ke video walkthrough ki request note kar li hai! Hamari team aapko video link WhatsApp par shortly share karegi 🎥\n\nKya hum is weekend par aapka live site tour plan karein? 🏡`;
+                if (lang === 'english') {
+                    fallbackText = `We have noted your request for the walkthrough video of *${projectDoc.name}*! Our team will share it shortly 🎥\n\nWould you also like to plan a personal site tour this weekend? 🏡`;
+                }
+                else if (lang === 'hindi') {
+                    fallbackText = `हमने *${projectDoc.name}* के वीडियो की रिक्वेस्ट नोट कर ली है! हमारी टीम जल्द ही वीडियो शेयर करेगी 🎥\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें? 🏡`;
+                }
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: fallbackText, createdAt: new Date() },
+                ]);
+                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+                return { reply: fallbackText, needsAgent: false, aiPaused: false };
+            }
+        }
+        if (mediaReq === 'map') {
+            if (projectDoc.map && projectDoc.map.trim()) {
+                await (0, baileysService_1.sendMedia)(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`).catch(() => { });
+                let replyText = `Yeh raha *${projectDoc.name}* ka approved layout map aur master plan! 🗺️\n\nAapko kaun sa plot size ya location best lag raha hai? 🏡`;
+                if (lang === 'english') {
+                    replyText = `Here is the approved layout map & master plan for *${projectDoc.name}*! 🗺️\n\nWhich plot size or configuration best matches your preference? 🏡`;
+                }
+                else if (lang === 'hindi') {
+                    replyText = `पेश है *${projectDoc.name}* का अप्रूव्ड लेआउट मैप और मास्टर प्लान! 🗺️\n\nआपकी पसंद कौन से साइज के प्लॉट या यूनिट के लिए है? 🏡`;
+                }
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: replyText, createdAt: new Date() },
+                ]);
+                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+                return { reply: replyText, needsAgent: false, aiPaused: false };
+            }
+            else {
+                let fallbackText = `Humne *${projectDoc.name}* ke layout map aur master plan ki request note kar li hai! Hamari team WhatsApp par PDF layout share kar degi 🗺️\n\nKya aap location aur plots dekhne ke liye site visit karna chahenge? 🏡`;
+                if (lang === 'english') {
+                    fallbackText = `We have noted your request for the layout map of *${projectDoc.name}*! Our team will share the master plan shortly 🗺️\n\nWould you like to schedule a site visit? 🏡`;
+                }
+                else if (lang === 'hindi') {
+                    fallbackText = `हमने *${projectDoc.name}* के लेआउट मैप की रिक्वेस्ट नोट कर ली है! हमारी टीम जल्द ही मास्टर प्लान शेयर करेगी 🗺️\n\nक्या आप साइट विजिट प्लान करना चाहेंगे? 🏡`;
+                }
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: fallbackText, createdAt: new Date() },
+                ]);
+                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+                return { reply: fallbackText, needsAgent: false, aiPaused: false };
+            }
+        }
+    }
+    // 4. Check for explicit human agent / callback request
     if (isHandoffRequested(text)) {
         const handoffReply = "Sure! I have shared your request with our senior sales & advisory team. A dedicated property advisor will contact you shortly.";
         // Save user and assistant messages
@@ -569,6 +710,14 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
         if (!isAskingArea) {
             console.warn(`[AI Guardrail] 🛡️ Suppressed false 35acres answer for query: "${text}"`);
             directAnswer = null;
+        }
+    }
+    // Check Universal First Welcome Message if user sent a greeting
+    if (!directAnswer && /^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(text.toLowerCase().trim())) {
+        const { getGlobalWelcomeMessage } = await Promise.resolve().then(() => __importStar(require('./botSettingService')));
+        const globalMsg = await getGlobalWelcomeMessage();
+        if (globalMsg && globalMsg.trim()) {
+            directAnswer = globalMsg.trim();
         }
     }
     // 🎯 If a direct verified answer or conversational small-talk response was found, USE IT DIRECTLY!

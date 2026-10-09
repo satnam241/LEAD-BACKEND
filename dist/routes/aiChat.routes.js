@@ -14,9 +14,12 @@ router.get('/training-data', adminAuth_1.adminAuth, aiChat_controller_1.getTrain
 router.post('/train', adminAuth_1.adminAuth, aiChat_controller_1.insertTrainingData);
 router.put('/training-data/:projectId/:faqIndex', adminAuth_1.adminAuth, aiChat_controller_1.updateTrainingFaq);
 router.delete('/training-data/:projectId/:faqIndex', adminAuth_1.adminAuth, aiChat_controller_1.deleteTrainingFaq);
-// First Message Configuration ("Pehle kya msg krna h")
+// First Message Configuration ("Pehle kya msg krna h") - Full CRUD
 router.get('/first-message', adminAuth_1.adminAuth, aiChat_controller_1.getFirstMessage);
 router.post('/first-message', adminAuth_1.adminAuth, aiChat_controller_1.setFirstMessage);
+router.put('/first-message', adminAuth_1.adminAuth, aiChat_controller_1.setFirstMessage);
+router.delete('/first-message', adminAuth_1.adminAuth, aiChat_controller_1.deleteFirstMessage);
+router.delete('/first-message/:projectId', adminAuth_1.adminAuth, aiChat_controller_1.deleteFirstMessage);
 // Auto-Learned Questions
 router.get('/learned-questions', adminAuth_1.adminAuth, aiChat_controller_1.listLearnedQuestions);
 router.post('/learned-questions/:id/approve', adminAuth_1.adminAuth, aiChat_controller_1.approveQuestion);
