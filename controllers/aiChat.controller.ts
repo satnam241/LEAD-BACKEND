@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { isLLMUp, getLLMQueueLength, LLM_MODEL, LLM_BASE_URL } from '../services/llmService';
+import { isLLMUp, getLLMQueueLength, LLM_MODEL, LLM_BASE_URL, getActiveLLMClient } from '../services/llmService';
 import ConversationMessage from '../models/conversationMessage.model';
 import ConversationState from '../models/conversationState.model';
 import LearnedQuestion from '../models/learnedQuestion.model';
@@ -7,18 +7,21 @@ import Project from '../models/project.model';
 import BotFlow from '../models/botFlow.model';
 import { approveLearnedQuestion, rejectLearnedQuestion, normalizeQuery } from '../services/aiLearningService';
 
-// GET /api/ai-chat/health - Check Local Llamafile LLM health and queue status
+// GET /api/ai-chat/health - Check active LLM provider and queue status
 export async function getAiHealth(_req: Request, res: Response): Promise<void> {
   try {
+    const active = getActiveLLMClient();
     const online = await isLLMUp();
     const queueLength = getLLMQueueLength();
     res.json({
       success: true,
+      provider: active.provider,
       online,
       queueLength,
-      model: LLM_MODEL,
-      baseUrl: LLM_BASE_URL,
-      message: online
+      model: active.model,
+      message: active.provider !== 'local'
+        ? `🔥 Cloud AI Thinker (${active.provider.toUpperCase()} - ${active.model}) is active and online!`
+        : online
         ? `Local Llama 3.2 (${LLM_MODEL}) is online and active at ${LLM_BASE_URL}`
         : `Llamafile server offline at ${LLM_BASE_URL}. Run: llamafile-0.10.6 --server --model Llama-3.2-3B-Instruct-Q4_K_M.gguf`,
     });

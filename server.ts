@@ -21,6 +21,7 @@ import { startWhatsApp } from './services/baileysService';
 import { registerChatbot } from './services/chatbotService';
 import campaignRoutes from './routes/campaign.routes';
 import templateRoutes from './routes/template.routes';
+import { getActiveLLMClient } from './services/llmService';
 import leadInterestRoutes from './routes/leadInterest.routes';
 import baileysRoutes from './routes/baileys.routes';
 import botFlowRoutes from './routes/botFlow.routes';
@@ -92,10 +93,11 @@ const startServer = async () => {
 console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
 console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
 console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REFRESH_TOKEN);
- // startAllJobs(); // 🔥 cron yaha start karo
+  const activeLLM = getActiveLLMClient();
+  console.log(`🤖 AI Engine: Active Provider = ${activeLLM.provider.toUpperCase()} (${activeLLM.model})`);
 
-registerChatbot();
-startWhatsApp();
+  registerChatbot();
+  startWhatsApp();
 
 startFollowupNotifier();
   const PORT = process.env.PORT || 4520;
