@@ -556,6 +556,15 @@ export async function generateReply(
     directAnswer = findDirectFaqAnswer(projectDoc, text);
   }
 
+  // 🛡️ Extra Safety Guardrail: Suppress false 35acres match if user didn't ask for area
+  if (directAnswer && /35\s*acres?|spread\s*over/i.test(directAnswer)) {
+    const isAskingArea = /acre|acres|spread|total area|land area|master plan/i.test(text);
+    if (!isAskingArea) {
+      console.warn(`[AI Guardrail] 🛡️ Suppressed false 35acres answer for query: "${text}"`);
+      directAnswer = null;
+    }
+  }
+
   // 🎯 If a direct verified answer or conversational small-talk response was found, USE IT DIRECTLY!
   // This guarantees zero-hallucination and stops dumb models from distorting facts into nonsense
   if (directAnswer && directAnswer.trim()) {

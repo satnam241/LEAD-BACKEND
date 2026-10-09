@@ -108,63 +108,24 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
 
   const rawLower = userMessage.toLowerCase().trim();
   const cleanMsg = rawLower.replace(/[^\w\s\u0900-\u097F]/gi, ' ');
-  const tokens = cleanMsg.split(/\s+/).filter(t => t.length >= 2);
 
-  // 1. Check trained FAQs in project
-  const faqs = project.faqs || [];
-  let bestFaq: any = null;
-  let highestScore = 0;
-
-  for (const faq of faqs) {
-    let score = 0;
-    const qLower = (faq.question || '').toLowerCase().trim();
-    const aLower = (faq.answer || '').toLowerCase().trim();
-    const keywords: string[] = (faq.keywords || []).map((k: string) => k.toLowerCase().trim()).filter(Boolean);
-
-    // Exact or phrase match with question
-    if (rawLower.includes(qLower) || qLower.includes(rawLower)) {
-      score += 15;
-    }
-
-    // Keyword matches (very high priority!)
-    for (const kw of keywords) {
-      if (rawLower.includes(kw) || cleanMsg.includes(kw)) {
-        score += 8;
-      }
-    }
-
-    // Token overlap
-    for (const token of tokens) {
-      if (qLower.includes(token)) score += 3;
-      if (keywords.some(kw => kw.includes(token))) score += 4;
-      if (aLower.includes(token)) score += 1;
-    }
-
-    if (score > highestScore) {
-      highestScore = score;
-      bestFaq = faq;
-    }
+  // ─────────────────────────────────────────────────────────────
+  // 1. TOP PRIORITY: Conversational & Small-Talk Handling
+  // MUST RUN FIRST so common words ("who are you", "how are you") never false-match FAQs!
+  // ─────────────────────────────────────────────────────────────
+  if (/\b(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u)\b/i.test(rawLower)) {
+    return `Main *${project?.name || 'Property Advisory'}* ka dedicated Property Consultant hoon 🏡 Main aapko is project ki live pricing, plot layouts, location aur site visit arrange karne mein guide karta hoon. Aap is property mein kya explore karna chahenge?`;
   }
 
-  // If trained FAQ match has confidence (score >= 4), return its answer directly
-  if (bestFaq && highestScore >= 4 && bestFaq.answer && bestFaq.answer.trim()) {
-    return bestFaq.answer.trim();
+  if (/\b(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho|how r u)\b/i.test(rawLower)) {
+    return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *${project?.name || 'is project'}* ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
   }
 
-  // 2. Intelligent Conversational & Small-Talk Handling (Weather, Small Talk, Bot Identity, Off-topic)
   if (/\b(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today)\b/i.test(rawLower)) {
     return `Haha, main weather forecast toh nahi bata sakta kyunki main *${project?.name || 'Property'}* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan plots ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
   }
 
-  if (/\b(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho)\b/i.test(rawLower)) {
-    return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *${project?.name || 'is project'}* ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
-  }
-
-  if (/\b(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho)\b/i.test(rawLower)) {
-    return `Main *${project?.name || 'Property Advisory'}* ka dedicated Property Consultant hoon 🏡 Main aapko is project ki live pricing, plot layouts, location aur site visit arrange karne mein guide karta hoon. Aap is property mein kya explore karna chahenge?`;
-  }
-
-  if (/\b(thanks|thank you|shukriya|dhanyawad)\b/i.test(rawLower)) {
+  if (/\b(thanks|thank you|shukriya|dhanyawad|thx)\b/i.test(rawLower)) {
     return `Most welcome! 🤝 Agar *${project?.name || 'is property'}* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
   }
 
@@ -172,7 +133,9 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     return `Haha, mera poora focus toh aapko *${project?.name || 'hamare project'}* mein best property dilwane par hai! 🏡 Kya hum pricing ya site visit ke baare mein baat karein?`;
   }
 
-  // 3. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
+  // ─────────────────────────────────────────────────────────────
+  // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
+  // ─────────────────────────────────────────────────────────────
   const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing'].some(w => rawLower.includes(w));
   if (isAskingPrice && project.priceRange) {
     let priceReply = `The price range for *${project.name}* is *${project.priceRange}*.`;
@@ -202,6 +165,66 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
       .map((u: any) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` — Rate: ${u.priceFrom}` : ''}`)
       .join('\n');
     return `Available configurations at *${project.name}*:\n\n${unitList}\n\nWhich configuration best suits your requirement?`;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 3. Trained FAQs Matcher (With Stop-Word Filtering & High Confidence)
+  // ─────────────────────────────────────────────────────────────
+  const STOP_WORDS = new Set([
+    'who', 'are', 'you', 'how', 'is', 'am', 'was', 'were', 'the', 'in', 'to', 'for',
+    'of', 'and', 'a', 'an', 'at', 'by', 'do', 'does', 'did', 'kya', 'hai', 'hain',
+    'ho', 'h', 'ka', 'ki', 'ke', 'ko', 'se', 'me', 'mein', 'par', 'pe', 'bhi',
+    'kuch', 'batao', 'bataiye', 'sir', 'ji', 'bhai', 'yaar', 'yr', 'please', 'tell'
+  ]);
+
+  const meaningfulTokens = cleanMsg
+    .split(/\s+/)
+    .map(t => t.trim())
+    .filter(t => t.length >= 3 && !STOP_WORDS.has(t));
+
+  // If user query only had stop words (e.g. "who are you"), do NOT match random FAQs!
+  if (meaningfulTokens.length === 0) {
+    return null;
+  }
+
+  const faqs = project.faqs || [];
+  let bestFaq: any = null;
+  let highestScore = 0;
+
+  for (const faq of faqs) {
+    let score = 0;
+    const qLower = (faq.question || '').toLowerCase().trim();
+    const aLower = (faq.answer || '').toLowerCase().trim();
+    const keywords: string[] = (faq.keywords || []).map((k: string) => k.toLowerCase().trim()).filter(Boolean);
+
+    // Exact question match
+    if (qLower.length >= 5 && rawLower === qLower) {
+      score += 20;
+    }
+
+    // Meaningful token matches
+    for (const token of meaningfulTokens) {
+      const tokenRegex = new RegExp(`\\b${token}\\b`, 'i');
+      if (tokenRegex.test(qLower)) score += 6;
+      if (keywords.some(kw => tokenRegex.test(kw))) score += 8;
+      if (tokenRegex.test(aLower)) score += 2;
+    }
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestFaq = faq;
+    }
+  }
+
+  // Require strong confidence (score >= 12)
+  if (bestFaq && highestScore >= 12 && bestFaq.answer && bestFaq.answer.trim()) {
+    // 🛡️ Extra Guardrail: If answer contains "35acres" but user did not ask about area/acres, reject it!
+    const is35AcresAnswer = /35\s*acres?|spread\s*over/i.test(bestFaq.answer);
+    const askedAboutArea = /acre|acres|spread|total area|land area|master plan/i.test(rawLower);
+    if (is35AcresAnswer && !askedAboutArea) {
+      return null;
+    }
+    return bestFaq.answer.trim();
   }
 
   return null;

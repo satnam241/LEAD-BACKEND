@@ -21,6 +21,7 @@ const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
 const baileysService_1 = require("./baileysService");
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const aiChatService_1 = require("./aiChatService");
+const llmService_1 = require("./llmService");
 const aiLearningService_1 = require("./aiLearningService");
 const projectKnowledgeService_1 = require("./projectKnowledgeService");
 const READ_TRIGGER_DELAY_MS = 2500;
@@ -404,7 +405,8 @@ async function handleUserInteraction(phone, text, lead) {
                 lastActiveAt: new Date(),
             });
         }
-        console.log(`[Chatbot] 🤖 Llama 3.2 processing free-text query from ${phone}: "${text}"`);
+        const activeLLM = (0, llmService_1.getActiveLLMClient)();
+        console.log(`[Chatbot] 🤖 ${activeLLM.provider.toUpperCase()} (${activeLLM.model}) processing query from ${phone}: "${text}"`);
         await (0, baileysService_1.sendTyping)(phone, 'composing');
         try {
             const aiResult = await (0, aiChatService_1.generateReply)(phone, text, lead, project?._id);

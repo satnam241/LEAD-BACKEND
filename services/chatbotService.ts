@@ -15,7 +15,7 @@ import {
 } from './baileysService';
 import LeadModel, { ILead } from '../models/lead.model';
 import { generateReply } from './aiChatService';
-import { getLLMQueueLength } from './llmService';
+import { getLLMQueueLength, getActiveLLMClient } from './llmService';
 import { extractAndSaveLeadPreferences } from './aiLearningService';
 import { findDirectFaqAnswer } from './projectKnowledgeService';
 import mongoose from 'mongoose';
@@ -503,7 +503,8 @@ async function handleUserInteraction(phone: string, text: string, lead: any): Pr
       });
     }
 
-    console.log(`[Chatbot] 🤖 Llama 3.2 processing free-text query from ${phone}: "${text}"`);
+    const activeLLM = getActiveLLMClient();
+    console.log(`[Chatbot] 🤖 ${activeLLM.provider.toUpperCase()} (${activeLLM.model}) processing query from ${phone}: "${text}"`);
     await sendTyping(phone, 'composing');
 
     try {

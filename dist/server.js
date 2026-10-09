@@ -23,6 +23,7 @@ const baileysService_1 = require("./services/baileysService");
 const chatbotService_1 = require("./services/chatbotService");
 const campaign_routes_1 = __importDefault(require("./routes/campaign.routes"));
 const template_routes_1 = __importDefault(require("./routes/template.routes"));
+const llmService_1 = require("./services/llmService");
 const leadInterest_routes_1 = __importDefault(require("./routes/leadInterest.routes"));
 const baileys_routes_1 = __importDefault(require("./routes/baileys.routes"));
 const botFlow_routes_1 = __importDefault(require("./routes/botFlow.routes"));
@@ -85,7 +86,8 @@ const startServer = async () => {
     console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
     console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
     console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REFRESH_TOKEN);
-    // startAllJobs(); // 🔥 cron yaha start karo
+    const activeLLM = (0, llmService_1.getActiveLLMClient)();
+    console.log(`🤖 AI Engine: Active Provider = ${activeLLM.provider.toUpperCase()} (${activeLLM.model})`);
     (0, chatbotService_1.registerChatbot)();
     (0, baileysService_1.startWhatsApp)();
     (0, followupNotifier_1.startFollowupNotifier)();

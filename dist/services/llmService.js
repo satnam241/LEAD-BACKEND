@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LLM_MODEL = exports.LLM_BASE_URL = void 0;
 exports.cleanThinkTags = cleanThinkTags;
+exports.getActiveLLMClient = getActiveLLMClient;
 exports.getLLMQueueLength = getLLMQueueLength;
 exports.isLLMUp = isLLMUp;
 exports.askLLM = askLLM;
@@ -18,32 +19,84 @@ function cleanThinkTags(text) {
     return text
         .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .replace(/<think>[\s\S]*/gi, '')
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/```$/i, '')
         .trim();
 }
-// ── Local LLM / Llamafile Setup (Llama-3.2-3B-Instruct-Q4_K_M.gguf) ───────────
+function getActiveLLMClient() {
+    // 1. Google Gemini (Deep reasoning, superb Hinglish understanding, fast)
+    if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
+        return {
+            client: new openai_1.default({
+                baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+                apiKey: process.env.GEMINI_API_KEY.trim(),
+                timeout: 30000,
+            }),
+            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+            provider: 'gemini',
+        };
+    }
+    // 2. OpenAI GPT-4o-mini / GPT-4o
+    if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith('sk-')) {
+        return {
+            client: new openai_1.default({
+                baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+                apiKey: process.env.OPENAI_API_KEY.trim(),
+                timeout: 30000,
+            }),
+            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            provider: 'openai',
+        };
+    }
+    // 3. Groq Llama 3.3 70B Versatile
+    if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim()) {
+        return {
+            client: new openai_1.default({
+                baseURL: 'https://api.groq.com/openai/v1',
+                apiKey: process.env.GROQ_API_KEY.trim(),
+                timeout: 30000,
+            }),
+            model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+            provider: 'groq',
+        };
+    }
+    // 4. Local Llamafile / llama.cpp
+    const rawBase = (process.env.LLM_BASE_URL || 'http://127.0.0.1:8080').trim();
+    const baseUrl = rawBase.replace(/\/+$/, '').endsWith('/v1')
+        ? rawBase.replace(/\/+$/, '')
+        : `${rawBase.replace(/\/+$/, '')}/v1`;
+    return {
+        client: new openai_1.default({
+            baseURL: baseUrl,
+            apiKey: process.env.OPENAI_API_KEY || 'local-no-key',
+            timeout: parseInt(process.env.LLM_TIMEOUT_MS || '60000', 10),
+        }),
+        model: (process.env.LLM_MODEL || 'Llama-3.2-3B-Instruct-Q4_K_M.gguf').trim(),
+        provider: 'local',
+    };
+}
 const RAW_BASE_URL = (process.env.LLM_BASE_URL || 'http://127.0.0.1:8080').trim();
 exports.LLM_BASE_URL = RAW_BASE_URL.replace(/\/+$/, '').endsWith('/v1')
     ? RAW_BASE_URL.replace(/\/+$/, '')
     : `${RAW_BASE_URL.replace(/\/+$/, '')}/v1`;
 exports.LLM_MODEL = (process.env.LLM_MODEL || 'Llama-3.2-3B-Instruct-Q4_K_M.gguf').trim();
-const openai = new openai_1.default({
-    baseURL: exports.LLM_BASE_URL,
-    apiKey: process.env.OPENAI_API_KEY || 'local-no-key',
-    timeout: parseInt(process.env.LLM_TIMEOUT_MS || '60000', 10),
-});
 function getLLMQueueLength() {
     return 0;
 }
 let cachedModelId = null;
 /**
- * Health check to verify if the local Llamafile / llama.cpp server is running and reachable
+ * Health check to verify if the LLM provider is reachable
  */
 async function isLLMUp() {
+    const active = getActiveLLMClient();
+    if (active.provider !== 'local') {
+        return true; // Cloud providers (Gemini, OpenAI, Groq) are active
+    }
     const rootUrl = RAW_BASE_URL.replace(/\/+$/, '').replace(/\/v1$/, '');
     const authHeaders = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'local-no-key'
         ? { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }
         : {};
-    // 1. Check OpenAI-compatible /v1/models endpoint with auth
     try {
         const res = await axios_1.default.get(`${exports.LLM_BASE_URL}/models`, {
             timeout: 3000,
@@ -59,7 +112,6 @@ async function isLLMUp() {
         }
     }
     catch { }
-    // 2. Check root /health endpoint of llamafile/llama.cpp
     try {
         const res = await axios_1.default.get(`${rootUrl}/health`, {
             timeout: 2500,
@@ -70,7 +122,6 @@ async function isLLMUp() {
             return true;
     }
     catch { }
-    // 3. Fallback check root endpoint
     try {
         const res = await axios_1.default.get(rootUrl, {
             timeout: 2000,
@@ -84,26 +135,44 @@ async function isLLMUp() {
     return false;
 }
 /**
- * Calls Local Llamafile LLM using OpenAI-compatible chat completions API
- * with direct Axios fallback for resilience
+ * Calls the active intelligent LLM (Gemini / OpenAI / Groq / Local llamafile)
  */
 async function askLLM(messages, options) {
-    const modelCandidate = cachedModelId || exports.LLM_MODEL;
-    // 🛡️ CRITICAL: Never let maxTokens exceed model context window (n_ctx is 2048)
-    // Clamp to max 512 tokens for concise, fast WhatsApp responses
+    const active = getActiveLLMClient();
     const requestedMax = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
-    const maxTokens = Math.min(Math.max(requestedMax > 0 ? requestedMax : 400, 64), 512);
+    const maxTokens = Math.min(Math.max(requestedMax > 0 ? requestedMax : 400, 64), 1024);
     const temperature = options?.temperature !== undefined ? options.temperature : 0.3;
+    // 1. If using Cloud Provider (Gemini / OpenAI / Groq):
+    if (active.provider !== 'local') {
+        try {
+            console.log(`[LLM Service] 🤖 Calling ${active.provider.toUpperCase()} (${active.model})...`);
+            const response = await active.client.chat.completions.create({
+                model: active.model,
+                messages,
+                max_tokens: maxTokens,
+                temperature,
+            });
+            const raw = response.choices?.[0]?.message?.content || '';
+            const cleaned = cleanThinkTags(raw);
+            if (cleaned && cleaned.trim()) {
+                return cleaned;
+            }
+        }
+        catch (apiErr) {
+            console.error(`[LLM Service] ❌ ${active.provider.toUpperCase()} call failed:`, apiErr?.status || '', apiErr?.message || apiErr);
+        }
+    }
+    // 2. Local Llamafile / llama.cpp fallback or default
+    const modelCandidate = cachedModelId || exports.LLM_MODEL;
     const apiKey = process.env.OPENAI_API_KEY;
     const authHeaders = { 'Content-Type': 'application/json' };
     if (apiKey && apiKey !== 'local-no-key') {
         authHeaders['Authorization'] = `Bearer ${apiKey}`;
     }
-    // Helper to try completions with a specific model identifier
-    const tryChat = async (modelToUse) => {
-        // 1. Try via OpenAI SDK client
+    const tryLocalChat = async (modelToUse) => {
+        // A. Via local OpenAI SDK client
         try {
-            const response = await openai.chat.completions.create({
+            const response = await active.client.chat.completions.create({
                 model: modelToUse,
                 messages,
                 max_tokens: maxTokens,
@@ -116,9 +185,9 @@ async function askLLM(messages, options) {
             }
         }
         catch (sdkErr) {
-            console.warn(`[Local LLM] ⚠️ OpenAI SDK call with model "${modelToUse}" failed:`, sdkErr?.status || '', sdkErr?.message || sdkErr);
+            console.warn(`[Local LLM] ⚠️ Local client call with model "${modelToUse}" failed:`, sdkErr?.status || '', sdkErr?.message || sdkErr);
         }
-        // 2. Direct Axios POST fallback with auth headers
+        // B. Direct Axios fallback
         try {
             const res = await axios_1.default.post(`${exports.LLM_BASE_URL}/chat/completions`, {
                 model: modelToUse,
@@ -142,18 +211,16 @@ async function askLLM(messages, options) {
         }
         return null;
     };
-    // 1. Attempt with primary candidate
-    let result = await tryChat(modelCandidate);
+    let result = await tryLocalChat(modelCandidate);
     if (result)
         return result;
-    // 2. If primary had a path or didn't have /opt/llm/, try alternative identifier
     if (modelCandidate !== exports.LLM_MODEL) {
-        result = await tryChat(exports.LLM_MODEL);
+        result = await tryLocalChat(exports.LLM_MODEL);
         if (result)
             return result;
     }
     else if (!modelCandidate.startsWith('/opt/llm/')) {
-        result = await tryChat(`/opt/llm/${modelCandidate}`);
+        result = await tryLocalChat(`/opt/llm/${modelCandidate}`);
         if (result)
             return result;
     }
@@ -171,7 +238,7 @@ async function askLLMSafe(messages, fallbackText, options) {
         return result;
     }
     catch (err) {
-        console.error('[Local LLM] ❌ askLLM error:', err?.message || err);
+        console.error('[LLM Service] ❌ askLLM error:', err?.message || err);
         return fallbackText;
     }
 }

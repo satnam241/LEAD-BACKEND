@@ -56,20 +56,23 @@ const learnedQuestion_model_1 = __importDefault(require("../models/learnedQuesti
 const project_model_1 = __importDefault(require("../models/project.model"));
 const botFlow_model_1 = __importDefault(require("../models/botFlow.model"));
 const aiLearningService_1 = require("../services/aiLearningService");
-// GET /api/ai-chat/health - Check Local Llamafile LLM health and queue status
+// GET /api/ai-chat/health - Check active LLM provider and queue status
 async function getAiHealth(_req, res) {
     try {
+        const active = (0, llmService_1.getActiveLLMClient)();
         const online = await (0, llmService_1.isLLMUp)();
         const queueLength = (0, llmService_1.getLLMQueueLength)();
         res.json({
             success: true,
+            provider: active.provider,
             online,
             queueLength,
-            model: llmService_1.LLM_MODEL,
-            baseUrl: llmService_1.LLM_BASE_URL,
-            message: online
-                ? `Local Llama 3.2 (${llmService_1.LLM_MODEL}) is online and active at ${llmService_1.LLM_BASE_URL}`
-                : `Llamafile server offline at ${llmService_1.LLM_BASE_URL}. Run: llamafile-0.10.6 --server --model Llama-3.2-3B-Instruct-Q4_K_M.gguf`,
+            model: active.model,
+            message: active.provider !== 'local'
+                ? `🔥 Cloud AI Thinker (${active.provider.toUpperCase()} - ${active.model}) is active and online!`
+                : online
+                    ? `Local Llama 3.2 (${llmService_1.LLM_MODEL}) is online and active at ${llmService_1.LLM_BASE_URL}`
+                    : `Llamafile server offline at ${llmService_1.LLM_BASE_URL}. Run: llamafile-0.10.6 --server --model Llama-3.2-3B-Instruct-Q4_K_M.gguf`,
         });
     }
     catch (err) {
