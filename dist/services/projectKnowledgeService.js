@@ -148,7 +148,7 @@ function findDirectFaqAnswer(project, userMessage) {
     // ─────────────────────────────────────────────────────────────
     // 1. TOP PRIORITY: Conversational & Small-Talk Handling (Trilingual)
     // ─────────────────────────────────────────────────────────────
-    if (/\b(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are)\b/i.test(rawLower)) {
+    if (/(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are|आप कौन|तुम कौन|क्या नाम|कौन हो|कौन हैं)/i.test(rawLower)) {
         if (lang === 'english') {
             return `I am your dedicated Property Consultant for *${project?.name || 'this property'}* 🏡 I am here to assist you with live pricing, plot layouts, location details, and scheduling site visits. What details would you like to explore?`;
         }
@@ -157,7 +157,7 @@ function findDirectFaqAnswer(project, userMessage) {
         }
         return `Main *${project?.name || 'Property Advisory'}* ka dedicated Property Consultant hoon 🏡 Main aapko is project ki live pricing, plot layouts, location aur site visit arrange karne mein guide karta hoon. Aap is property mein kya explore karna chahenge?`;
     }
-    if (/\b(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho|how r u)\b/i.test(rawLower)) {
+    if (/(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho|how r u|कैसे हो|कैसा है|क्या हाल|सब ठीक)/i.test(rawLower)) {
         if (lang === 'english') {
             return `I am doing great, thank you! 😊 Hope you are having a wonderful day. How may I assist you with *${project?.name || 'this property'}* today? Would you like to check pricing or unit sizes?`;
         }
@@ -166,7 +166,7 @@ function findDirectFaqAnswer(project, userMessage) {
         }
         return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *${project?.name || 'is project'}* ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
     }
-    if (/\b(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today)\b/i.test(rawLower)) {
+    if (/(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today|मौसम|बारिश|गर्मी|ठंड|तापमान)/i.test(rawLower)) {
         if (lang === 'english') {
             return `Haha, I cannot check the weather forecast as I'm the Real Estate Advisor for *${project?.name || 'this property'}*! 🌤️ But I can definitely guide you on plot pricing, connectivity, and scheduling a site visit. Would you like to explore location or unit sizes?`;
         }
@@ -175,7 +175,7 @@ function findDirectFaqAnswer(project, userMessage) {
         }
         return `Haha, main weather forecast toh nahi bata sakta kyunki main *${project?.name || 'Property'}* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan plots ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
     }
-    if (/\b(thanks|thank you|shukriya|dhanyawad|thx)\b/i.test(rawLower)) {
+    if (/(thanks|thank you|shukriya|dhanyawad|thx|धन्यवाद|शुक्रिया)/i.test(rawLower)) {
         if (lang === 'english') {
             return `You're most welcome! 🤝 Feel free to let me know if you have any questions about *${project?.name || 'this property'}* or wish to plan a site visit.`;
         }
@@ -184,7 +184,7 @@ function findDirectFaqAnswer(project, userMessage) {
         }
         return `Most welcome! 🤝 Agar *${project?.name || 'is property'}* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
     }
-    if (/\b(joke|jokes|gana|song|movie|film|cricket|match|modi|politics)\b/i.test(rawLower)) {
+    if (/(joke|jokes|gana|song|movie|film|cricket|match|modi|politics|चुटकुला|गाना|फिल्म)/i.test(rawLower)) {
         if (lang === 'english') {
             return `Haha, my entire focus is on helping you find your dream home at *${project?.name || 'our property'}*! 🏡 Shall we discuss pricing or schedule a site visit?`;
         }
@@ -196,7 +196,10 @@ function findDirectFaqAnswer(project, userMessage) {
     // ─────────────────────────────────────────────────────────────
     // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
     // ─────────────────────────────────────────────────────────────
-    const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing', 'rate kya'].some(w => rawLower.includes(w));
+    const isAskingPrice = [
+        'price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing', 'rate kya',
+        'कीमत', 'कीमतें', 'दाम', 'रेट', 'प्राइस', 'बजट', 'रुपये', 'लाख', 'भाव', 'कितने का', 'मूल्य'
+    ].some(w => rawLower.includes(w));
     if (isAskingPrice && project.priceRange) {
         if (lang === 'english') {
             let priceReply = `The price range for *${project.name}* starts from *${project.priceRange}*.`;
@@ -236,7 +239,10 @@ function findDirectFaqAnswer(project, userMessage) {
         priceReply += `\n\nAap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye? 🏡`;
         return priceReply;
     }
-    const isAskingLocation = ['location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated', 'landmark', 'pataa', 'site kahan', 'site address'].some(w => rawLower.includes(w));
+    const isAskingLocation = [
+        'location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated', 'landmark', 'pataa', 'site kahan', 'site address',
+        'लोकेशन', 'कहाँ', 'कहा', 'पता', 'कहाँ पर', 'कहा पे', 'स्थान', 'जगह', 'रास्ता', 'पहुंचना', 'किधर'
+    ].some(w => rawLower.includes(w));
     if (isAskingLocation && project.location) {
         if (lang === 'english') {
             return `*${project.name}* is located at *${project.location}*.\n\nWould you like more details on nearby connectivity, or shall we arrange a site visit this weekend? 🏡`;
@@ -246,7 +252,10 @@ function findDirectFaqAnswer(project, userMessage) {
         }
         return `*${project.name}* prime location par situated hai — *${project.location}*.\n\nKya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
     }
-    const isAskingPossession = ['possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover', 'completion'].some(w => rawLower.includes(w));
+    const isAskingPossession = [
+        'possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover', 'completion',
+        'पजेशन', 'कब्जा', 'कब तक', 'तैयार', 'हैंडओवर', 'निर्माण'
+    ].some(w => rawLower.includes(w));
     if (isAskingPossession && project.possession) {
         if (lang === 'english') {
             return `The possession timeline for *${project.name}* is *${project.possession}*.\n\nWould you like to schedule a site visit to inspect ongoing development? 🏡`;
@@ -256,7 +265,10 @@ function findDirectFaqAnswer(project, userMessage) {
         }
         return `*${project.name}* ka possession timeline *${project.possession}* hai.\n\nKya aap construction quality aur development dekhne ke liye site visit arrange karna chahenge? 🏡`;
     }
-    const isAskingSizes = ['size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration', 'space', 'layouts', 'plot size'].some(w => rawLower.includes(w));
+    const isAskingSizes = [
+        'size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration', 'space', 'layouts', 'plot size',
+        'साइज', 'प्लॉट', 'गज', 'स्क्वायर यार्ड', 'क्षेत्रफल', 'बीएचके', 'फ्लैट', 'आकार', 'नाप'
+    ].some(w => rawLower.includes(w));
     if (isAskingSizes && project.unitTypes && project.unitTypes.length > 0) {
         const unitList = project.unitTypes
             .map((u) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` — Rate: ${u.priceFrom}` : ''}`)

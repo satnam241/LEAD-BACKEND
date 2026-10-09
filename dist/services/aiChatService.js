@@ -99,6 +99,12 @@ function isSiteVisitIntent(text) {
         'visit arrange',
         'visit book',
         'visit karna',
+        'साइट विजिट',
+        'विजिट',
+        'देखने आना',
+        'सैंपल फ्लैट',
+        'कब आ सकते',
+        'प्रॉपर्टी देखना',
     ];
     return siteKeywords.some(kw => lower.includes(kw));
 }
@@ -116,45 +122,53 @@ function parseSlotDateTime(text) {
         sun: 0,
         ravivar: 0,
         itwar: 0,
+        'रविवार': 0,
+        'इतवार': 0,
         monday: 1,
         mon: 1,
         somvar: 1,
+        'सोमवार': 1,
         tuesday: 2,
         tue: 2,
         mangalvar: 2,
+        'मंगलवार': 2,
         wednesday: 3,
         wed: 3,
         budhvar: 3,
+        'बुधवार': 3,
         thursday: 4,
         thu: 4,
         guruvar: 4,
+        'गुरुवार': 4,
+        'बृहस्पतिवार': 4,
         friday: 5,
         fri: 5,
         shukravar: 5,
+        'शुक्रवार': 5,
         saturday: 6,
         sat: 6,
         shanivar: 6,
+        'शनिवार': 6,
         weekend: 6,
     };
     const now = new Date();
     let targetDate = new Date();
     let dayDetected = false;
     // Relative days
-    if (/kal|tomorrow/i.test(lower)) {
+    if (/kal|tomorrow|कल/i.test(lower)) {
         targetDate.setDate(targetDate.getDate() + 1);
         dayDetected = true;
     }
-    else if (/parso/i.test(lower)) {
+    else if (/parso|परसों|परसो/i.test(lower)) {
         targetDate.setDate(targetDate.getDate() + 2);
         dayDetected = true;
     }
-    else if (/aaj|today/i.test(lower)) {
+    else if (/aaj|today|आज/i.test(lower)) {
         dayDetected = true;
     }
     else {
         for (const [dayName, dayIndex] of Object.entries(daysMap)) {
-            const regex = new RegExp(`\\b${dayName}\\b`, 'i');
-            if (regex.test(lower)) {
+            if (lower.includes(dayName)) {
                 const currentDay = targetDate.getDay();
                 let diff = dayIndex - currentDay;
                 if (diff <= 0)
@@ -187,7 +201,7 @@ function parseSlotDateTime(text) {
     let hour = 11; // default morning slot 11:00 AM
     let minute = 0;
     let timeDetected = false;
-    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|baje)?/i);
+    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|baje|बजे)?/i);
     if (timeMatch && timeMatch[0]) {
         const rawH = parseInt(timeMatch[1], 10);
         const rawM = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
@@ -201,7 +215,7 @@ function parseSlotDateTime(text) {
             else if (meridian === 'am' && rawH === 12) {
                 hour = 0;
             }
-            else if (meridian === 'baje') {
+            else if (meridian === 'baje' || meridian === 'बजे') {
                 if (rawH >= 1 && rawH <= 7)
                     hour = rawH + 12;
                 else
@@ -218,17 +232,17 @@ function parseSlotDateTime(text) {
             }
         }
     }
-    if (/morning|subah/i.test(lower) && !timeDetected) {
+    if (/morning|subah|सुबह/i.test(lower) && !timeDetected) {
         hour = 11;
         minute = 0;
         timeDetected = true;
     }
-    else if (/afternoon|dopahar/i.test(lower) && !timeDetected) {
+    else if (/afternoon|dopahar|दोपहर/i.test(lower) && !timeDetected) {
         hour = 14;
         minute = 30;
         timeDetected = true;
     }
-    else if (/evening|shaam/i.test(lower) && !timeDetected) {
+    else if (/evening|shaam|शाम/i.test(lower) && !timeDetected) {
         hour = 16;
         minute = 30;
         timeDetected = true;
