@@ -521,9 +521,7 @@ async function handleUserInteraction(phone: string, text: string, lead: any): Pr
       await sendText(
         phone,
         directFallback ||
-        (project?.summary
-          ? `Regarding *${project.name}*: ${project.summary}\n\nFeel free to ask about pricing, unit sizes, location, or schedule a site visit.`
-          : 'Thank you! I have noted your requirements. Our dedicated property advisory team will connect with you shortly!')
+        `Regarding *${project?.name || 'our property'}*: Hamare paas prime options available hain starting @ ${project?.priceRange || 'best market rates'}. Kya aap location, pricing ya sample flat visit ke baare mein jaanna chahenge? 🏡`
       );
     }
   } catch (err: any) {

@@ -548,12 +548,10 @@ export async function generateReply(
     }
   }
 
-  // Define smart fallback so user NEVER gets an empty/repetitive single message
+  // Define smart fallback so user NEVER gets an empty or raw dumped copy-paste message
   const smartFallback =
     directAnswer ||
-    (projectDoc?.summary
-      ? `Regarding *${projectDoc.name}*: ${projectDoc.summary}\n\nFeel free to ask about pricing, unit sizes, location, or schedule a site visit.`
-      : "Thank you! I have noted your requirements. Our property advisory team will connect with you shortly with full details.");
+    `Main aapki baat samajh gaya regarding *${projectDoc?.name || 'our property'}*! Hamare paas yahan prime options available hain starting @ ${projectDoc?.priceRange || 'best market rates'}. Kya aap location, plot sizes ya is weekend par site visit ke baare mein jaanna chahte hain? 🏡`;
 
   // 6. Build system and conversation messages with dynamic facts, portfolio, and guardrails
   let effectiveContextNote = directAnswer

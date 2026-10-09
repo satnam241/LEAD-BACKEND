@@ -151,7 +151,28 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     return bestFaq.answer.trim();
   }
 
-  // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
+  // 2. Intelligent Conversational & Small-Talk Handling (Weather, Small Talk, Bot Identity, Off-topic)
+  if (/\b(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today)\b/i.test(rawLower)) {
+    return `Haha, main weather forecast toh nahi bata sakta kyunki main *${project?.name || 'Property'}* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan plots ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
+  }
+
+  if (/\b(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho)\b/i.test(rawLower)) {
+    return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *${project?.name || 'is project'}* ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
+  }
+
+  if (/\b(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho)\b/i.test(rawLower)) {
+    return `Main *${project?.name || 'Property Advisory'}* ka dedicated Property Consultant hoon 🏡 Main aapko is project ki live pricing, plot layouts, location aur site visit arrange karne mein guide karta hoon. Aap is property mein kya explore karna chahenge?`;
+  }
+
+  if (/\b(thanks|thank you|shukriya|dhanyawad)\b/i.test(rawLower)) {
+    return `Most welcome! 🤝 Agar *${project?.name || 'is property'}* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
+  }
+
+  if (/\b(joke|jokes|gana|song|movie|film|cricket|match|modi|politics)\b/i.test(rawLower)) {
+    return `Haha, mera poora focus toh aapko *${project?.name || 'hamare project'}* mein best property dilwane par hai! 🏡 Kya hum pricing ya site visit ke baare mein baat karein?`;
+  }
+
+  // 3. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
   const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing'].some(w => rawLower.includes(w));
   if (isAskingPrice && project.priceRange) {
     let priceReply = `The price range for *${project.name}* is *${project.priceRange}*.`;

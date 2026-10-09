@@ -419,9 +419,7 @@ async function handleUserInteraction(phone, text, lead) {
             await (0, baileysService_1.sendTyping)(phone, 'paused');
             const directFallback = project ? (0, projectKnowledgeService_1.findDirectFaqAnswer)(project, text) : null;
             await (0, baileysService_1.sendText)(phone, directFallback ||
-                (project?.summary
-                    ? `Regarding *${project.name}*: ${project.summary}\n\nFeel free to ask about pricing, unit sizes, location, or schedule a site visit.`
-                    : 'Thank you! I have noted your requirements. Our dedicated property advisory team will connect with you shortly!'));
+                `Regarding *${project?.name || 'our property'}*: Hamare paas prime options available hain starting @ ${project?.priceRange || 'best market rates'}. Kya aap location, pricing ya sample flat visit ke baare mein jaanna chahenge? 🏡`);
         }
     }
     catch (err) {
