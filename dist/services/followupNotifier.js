@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -6,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.startFollowupNotifier = startFollowupNotifier;
 exports.checkAndNotify = checkAndNotify;
 exports.checkExactTimeAlerts = checkExactTimeAlerts;
+exports.checkAndNudgeInactiveLeads = checkAndNudgeInactiveLeads;
 const node_cron_1 = __importDefault(require("node-cron"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const admin_model_1 = __importDefault(require("../models/admin.model"));
@@ -172,12 +206,69 @@ async function checkExactTimeAlerts() {
         console.error("Exact-time notifier error:", err);
     }
 }
+// ── 🆕 Smart Inactive Follow-ups (Drip Re-engagement) ─────────────────────────
+// Re-engages dormant/ghosting leads after 24-48 hours of silence
+async function checkAndNudgeInactiveLeads() {
+    try {
+        const now = new Date();
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+        const inactiveLeads = await lead_model_1.default.find({
+            isDeleted: false,
+            phone: { $exists: true, $ne: "" },
+            status: { $in: ["new", "contacted", "interested"] },
+            reminderCount: { $lt: 3 }, // Maximum 3 nudges to maintain courtesy
+            $or: [
+                { lastReminderSent: null },
+                { lastReminderSent: { $lt: twentyFourHoursAgo } },
+            ],
+            updatedAt: { $gte: seventyTwoHoursAgo, $lte: twentyFourHoursAgo },
+        })
+            .populate("projectId", "name location")
+            .limit(20);
+        if (inactiveLeads.length === 0) {
+            return;
+        }
+        console.log(`[Smart Follow-up] Found ${inactiveLeads.length} inactive lead(s) for gentle re-engagement.`);
+        const { sendWhatsAppUnified } = await Promise.resolve().then(() => __importStar(require("./whatsappService")));
+        const ConversationMessage = (await Promise.resolve().then(() => __importStar(require("../models/conversationMessage.model")))).default;
+        for (const lead of inactiveLeads) {
+            if (!lead.phone)
+                continue;
+            const projectName = lead.projectId?.name ? `*${lead.projectId.name}*` : "our property";
+            const nudgeMessage = `Hi ${lead.fullName || "there"}! 👋 Hope you're doing well.\n\nMain ${projectName} ke regarding follow up kar raha tha. Kya aapko pricing aur project details review karne ka mauka mila?\n\nAgar aapka koi question hai, sample flat visit plan karna chahte hain, ya floor plan dekhna ho, toh zaroor batayein — I am here to help! 🏡`;
+            try {
+                await sendWhatsAppUnified(lead.phone, nudgeMessage);
+                console.log(`[Smart Follow-up] 📨 Dispatched gentle nudge to ${lead.phone} (${lead.fullName})`);
+                await lead_model_1.default.findByIdAndUpdate(lead._id, {
+                    $inc: { reminderCount: 1 },
+                    $set: { lastReminderSent: now },
+                });
+                await ConversationMessage.create({
+                    leadId: lead._id,
+                    phone: lead.phone,
+                    role: "assistant",
+                    content: nudgeMessage,
+                    createdAt: now,
+                }).catch(() => { });
+            }
+            catch (sendErr) {
+                console.warn(`[Smart Follow-up] Failed to nudge ${lead.phone}:`, sendErr?.message || sendErr);
+            }
+        }
+    }
+    catch (err) {
+        console.error("[Smart Follow-up] Error in checkAndNudgeInactiveLeads:", err?.message || err);
+    }
+}
 // ── Schedules ──────────────────────────────────────────────────────────────────
 function startFollowupNotifier() {
     // Daily 9AM digest — overdue + due-today summary
     node_cron_1.default.schedule("0 9 * * *", checkAndNotify, { timezone: "Asia/Kolkata" });
-    // 🆕 Har 5 minute — jis exact time pe follow-up schedule hua usi time alert bhejo
+    // Har 5 minute — jis exact time pe follow-up schedule hua usi time alert bhejo
     node_cron_1.default.schedule("*/5 * * * *", checkExactTimeAlerts, { timezone: "Asia/Kolkata" });
-    console.log("Follow-up notifiers scheduled — daily 9:00 AM digest + every 5min exact-time alert");
+    // 🆕 Smart Inactive Follow-ups — Daily at 11:30 AM & 5:30 PM IST (respectful business hours)
+    node_cron_1.default.schedule("30 11,17 * * *", checkAndNudgeInactiveLeads, { timezone: "Asia/Kolkata" });
+    console.log("Follow-up notifiers scheduled — daily 9:00 AM digest + every 5min exact-time alert + smart inactive nudges (11:30 AM & 5:30 PM)");
 }
 //# sourceMappingURL=followupNotifier.js.map

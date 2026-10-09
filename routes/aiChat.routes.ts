@@ -13,12 +13,14 @@ import {
   deleteTrainingFaq,
   getFirstMessage,
   setFirstMessage,
+  testAiQuery,
 } from '../controllers/aiChat.controller';
 
 const router = Router();
 
-// Health and Messages
+// Health, Messages, and Test Diagnostic
 router.get('/health', adminAuth, getAiHealth);
+router.post('/test-query', adminAuth, testAiQuery);
 router.get('/messages/:leadId', adminAuth, getLeadMessages);
 router.patch('/resume/:leadId', adminAuth, resumeLeadAi);
 

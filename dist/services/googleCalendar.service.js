@@ -40,21 +40,22 @@ function isInvalidGrantError(err) {
 const createCalendarEvent = async (refreshToken, lead) => {
     try {
         const calendar = await getCalendarClient(refreshToken);
+        const isSiteVisit = (lead.followUp?.message || '').toLowerCase().includes('site visit');
+        const summaryPrefix = isSiteVisit ? '🏡 Site Visit' : '📅 Lead Follow-up';
+        const frontendBaseUrl = process.env.FRONTEND_URL1 || process.env.FRONTEND_URL || 'http://localhost:3000';
+        const crmLink = lead._id ? `${frontendBaseUrl.replace(/\/$/, '')}/leads?leadId=${lead._id}` : frontendBaseUrl;
         const response = await calendar.events.insert({
             calendarId: "primary",
             requestBody: {
-                summary: `Lead Follow-up • ${lead.fullName}`,
-                description: `
+                summary: `${summaryPrefix} • ${lead.fullName || 'Lead'}`,
+                description: `Lead Details:
+Name: ${lead.fullName || '—'}
+Phone: ${lead.phone || '—'}
+Email: ${lead.email || '—'}
+Budget: ${lead.whatIsYourBudget || '—'}
+Note / Purpose: ${lead.followUp?.message || '—'}
 
-Phone:
-${lead.phone}
-
-Email:
-${lead.email}
-
-Message:
-${lead.followUp?.message}
-
+CRM Profile: ${crmLink}
 `,
                 start: {
                     dateTime: new Date(lead.followUp.date).toISOString(),

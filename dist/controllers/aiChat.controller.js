@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -15,6 +48,7 @@ exports.setFirstMessage = setFirstMessage;
 exports.listLearnedQuestions = listLearnedQuestions;
 exports.approveQuestion = approveQuestion;
 exports.rejectQuestion = rejectQuestion;
+exports.testAiQuery = testAiQuery;
 const llmService_1 = require("../services/llmService");
 const conversationMessage_model_1 = __importDefault(require("../models/conversationMessage.model"));
 const conversationState_model_1 = __importDefault(require("../models/conversationState.model"));
@@ -316,6 +350,56 @@ async function rejectQuestion(req, res) {
     }
     catch (err) {
         res.status(500).json({ success: false, error: err.message || 'Failed to dismiss question' });
+    }
+}
+// POST /api/ai-chat/test-query - Test how AI evaluates a question in real-time
+async function testAiQuery(req, res) {
+    try {
+        const { query, projectId } = req.body;
+        if (!query || !query.trim()) {
+            res.status(400).json({ success: false, error: 'Query is required for test' });
+            return;
+        }
+        const cleanQuery = query.trim();
+        let project = null;
+        if (projectId) {
+            project = await project_model_1.default.findById(projectId).lean();
+        }
+        else {
+            project = await project_model_1.default.findOne({ isActive: true }).lean();
+        }
+        if (!project) {
+            res.status(404).json({ success: false, error: 'No active project found for test' });
+            return;
+        }
+        const { findDirectFaqAnswer, findCrossSellProject } = await Promise.resolve().then(() => __importStar(require('../services/projectKnowledgeService')));
+        const { isSiteVisitIntent, parseSlotDateTime, isHandoffRequested } = await Promise.resolve().then(() => __importStar(require('../services/aiChatService')));
+        const { extractAndSaveLeadPreferences } = await Promise.resolve().then(() => __importStar(require('../services/aiLearningService')));
+        const directFaqAnswer = findDirectFaqAnswer(project, cleanQuery);
+        const isSiteVisit = isSiteVisitIntent(cleanQuery);
+        const parsedSlot = isSiteVisit ? parseSlotDateTime(cleanQuery) : null;
+        const isHandoff = isHandoffRequested(cleanQuery);
+        const crossSell = await findCrossSellProject(project._id, cleanQuery);
+        const dummyId = new (await Promise.resolve().then(() => __importStar(require('mongoose')))).Types.ObjectId();
+        const simulatedProfile = await extractAndSaveLeadPreferences(dummyId, cleanQuery);
+        res.json({
+            success: true,
+            query: cleanQuery,
+            project: { id: project._id, name: project.name, location: project.location, priceRange: project.priceRange },
+            diagnostics: {
+                isSiteVisit,
+                parsedSlot,
+                isHandoff,
+                directFaqAnswer,
+                crossSellOpportunity: crossSell ? { name: crossSell.name, location: crossSell.location, priceRange: crossSell.priceRange } : null,
+                simulatedProfile,
+                matchedTrainedFaqs: (project.faqs || []).filter((f) => cleanQuery.toLowerCase().includes((f.question || '').toLowerCase()) ||
+                    (f.keywords || []).some((k) => cleanQuery.toLowerCase().includes(k.toLowerCase()))),
+            },
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Error testing AI query' });
     }
 }
 //# sourceMappingURL=aiChat.controller.js.map

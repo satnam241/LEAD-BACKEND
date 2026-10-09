@@ -5,6 +5,8 @@ const template_controller_1 = require("../controllers/template.controller");
 const upload_1 = require("../middleware/upload");
 const router = (0, express_1.Router)();
 router.get('/', template_controller_1.listTemplates);
+router.get('/default', template_controller_1.getDefaultTemplate);
+router.patch('/:id/default', template_controller_1.setDefaultTemplate);
 router.post('/', template_controller_1.createTemplate);
 router.post('/upload', upload_1.upload.single('image'), template_controller_1.uploadTemplateImage);
 router.put('/:id', template_controller_1.updateTemplate);

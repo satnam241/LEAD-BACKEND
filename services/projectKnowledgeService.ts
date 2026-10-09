@@ -65,9 +65,9 @@ export async function getProjectFacts(
     });
 
     scoredFaqs.sort((a, b) => b.score - a.score);
-    selectedFaqs = scoredFaqs.slice(0, 3).map(s => s.faq);
+    selectedFaqs = scoredFaqs.slice(0, 10).map(s => s.faq);
   } else {
-    selectedFaqs = faqs.slice(0, 3);
+    selectedFaqs = faqs.slice(0, 10);
   }
 
   if (selectedFaqs.length > 0) {
@@ -79,12 +79,24 @@ export async function getProjectFacts(
 
   const rawFacts = lines.join('\n');
 
-  // Hard cap at ~2500 characters
-  if (rawFacts.length > 2500) {
-    return rawFacts.slice(0, 2490) + '...';
+  // Cap at ~3500 characters
+  if (rawFacts.length > 3500) {
+    return rawFacts.slice(0, 3490) + '...';
   }
 
   return rawFacts;
+}
+
+/**
+ * Parses price text (e.g. "50 Lakhs", "1.2 Cr", "75L") into numeric Lakhs
+ */
+export function parsePriceToLakhs(str: string): number | null {
+  if (!str) return null;
+  const matchCr = str.match(/(\d+(?:\.\d+)?)\s*(?:cr|crore|crores)/i);
+  if (matchCr) return parseFloat(matchCr[1]) * 100;
+  const matchLakh = str.match(/(\d+(?:\.\d+)?)\s*(?:lakh|lakhs|lac|lacs|l\b)/i);
+  if (matchLakh) return parseFloat(matchLakh[1]);
+  return null;
 }
 
 /**
@@ -96,7 +108,7 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
 
   const rawLower = userMessage.toLowerCase().trim();
   const cleanMsg = rawLower.replace(/[^\w\s\u0900-\u097F]/gi, ' ');
-  const tokens = cleanMsg.split(/\s+/).filter(t => t.length >= 3);
+  const tokens = cleanMsg.split(/\s+/).filter(t => t.length >= 2);
 
   // 1. Check trained FAQs in project
   const faqs = project.faqs || [];
@@ -134,13 +146,13 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     }
   }
 
-  // If trained FAQ match has strong confidence (score >= 6), return its answer directly
-  if (bestFaq && highestScore >= 6 && bestFaq.answer && bestFaq.answer.trim()) {
+  // If trained FAQ match has confidence (score >= 4), return its answer directly
+  if (bestFaq && highestScore >= 4 && bestFaq.answer && bestFaq.answer.trim()) {
     return bestFaq.answer.trim();
   }
 
   // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
-  const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr'].some(w => rawLower.includes(w));
+  const isAskingPrice = ['price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing'].some(w => rawLower.includes(w));
   if (isAskingPrice && project.priceRange) {
     let priceReply = `The price range for *${project.name}* is *${project.priceRange}*.`;
     if (project.unitTypes && project.unitTypes.length > 0) {
@@ -153,22 +165,60 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     return priceReply;
   }
 
-  const isAskingLocation = ['location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated'].some(w => rawLower.includes(w));
+  const isAskingLocation = ['location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated', 'landmark', 'pataa', 'site kahan'].some(w => rawLower.includes(w));
   if (isAskingLocation && project.location) {
     return `*${project.name}* is located at *${project.location}*.\nWould you like more details on nearby connectivity or a site visit?`;
   }
 
-  const isAskingPossession = ['possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover'].some(w => rawLower.includes(w));
+  const isAskingPossession = ['possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover', 'completion'].some(w => rawLower.includes(w));
   if (isAskingPossession && project.possession) {
     return `The possession timeline for *${project.name}* is *${project.possession}*.`;
   }
 
-  const isAskingSizes = ['size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration'].some(w => rawLower.includes(w));
+  const isAskingSizes = ['size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration', 'space', 'layouts'].some(w => rawLower.includes(w));
   if (isAskingSizes && project.unitTypes && project.unitTypes.length > 0) {
     const unitList = project.unitTypes
       .map((u: any) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` — Rate: ${u.priceFrom}` : ''}`)
       .join('\n');
     return `Available configurations at *${project.name}*:\n\n${unitList}\n\nWhich configuration best suits your requirement?`;
+  }
+
+  return null;
+}
+
+/**
+ * Cross-Selling Budget Engine:
+ * Finds another active project from the portfolio if the buyer's budget is lower than current project
+ */
+export async function findCrossSellProject(
+  currentProjectId: string | mongoose.Types.ObjectId,
+  budgetStr: string
+): Promise<any | null> {
+  try {
+    const budgetLakhs = parsePriceToLakhs(budgetStr);
+    if (!budgetLakhs) return null;
+
+    const otherProjects = await Project.find({
+      _id: { $ne: currentProjectId },
+      isActive: true,
+    }).lean();
+
+    for (const proj of otherProjects) {
+      const projPriceLakhs = parsePriceToLakhs(proj.priceRange || '');
+      if (projPriceLakhs && projPriceLakhs <= budgetLakhs * 1.2) {
+        return proj;
+      }
+      if (proj.unitTypes && proj.unitTypes.length > 0) {
+        for (const u of proj.unitTypes) {
+          const uPrice = parsePriceToLakhs(u.priceFrom || '');
+          if (uPrice && uPrice <= budgetLakhs * 1.2) {
+            return proj;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error finding cross-sell project:', err);
   }
 
   return null;

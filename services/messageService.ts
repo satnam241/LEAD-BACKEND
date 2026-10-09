@@ -5,7 +5,7 @@ import ScheduledMessage from "../models/scheduledMessage.model";
 import ConversationMessage from "../models/conversationMessage.model";
 import { sendEmail } from "./emailService";
 import { sendWhatsAppUnified } from "./whatsappService";
-import { getDefaultMessage } from "../utils/messageTemplates";
+import { getDefaultMessage, getResolvedDefaultMessage } from "../utils/messageTemplates";
 import { learnFromAgentReply } from "./aiLearningService";
 
 export type MessageType = "email" | "whatsapp" | "both";
@@ -21,11 +21,12 @@ export const sendMessageToLead = async ({
   customMessage?: string;
   adminEmail?: string;
 }) => {
-  const lead = await Lead.findById(leadId);
+  const lead = await Lead.findById(leadId).populate('projectId');
   if (!lead) throw new Error("Lead not found");
 
+  const defaultMsg = await getResolvedDefaultMessage(lead);
   const finalMessage =
-    customMessage || lead.followUp?.message || getDefaultMessage(lead.fullName);
+    customMessage || lead.followUp?.message || defaultMsg;
 
   // Auto-detect best channel if not specified
   let targetType: MessageType = messageType || "whatsapp";
@@ -125,11 +126,12 @@ export const scheduleMessageToLead = async ({
   adminEmail?: string;
   delayMinutes?: number;
 }) => {
-  const lead = await Lead.findById(leadId);
+  const lead = await Lead.findById(leadId).populate('projectId');
   if (!lead) throw new Error("Lead not found");
 
+  const defaultMsg = await getResolvedDefaultMessage(lead);
   const finalMessage =
-    customMessage || lead.followUp?.message || getDefaultMessage(lead.fullName);
+    customMessage || lead.followUp?.message || defaultMsg;
 
   const sendAt = new Date(Date.now() + delayMinutes * 60 * 1000);
 

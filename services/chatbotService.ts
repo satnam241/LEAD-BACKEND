@@ -473,9 +473,11 @@ async function handleUserInteraction(phone: string, text: string, lead: any): Pr
           return;
         }
 
-        // After answering their query, gently present the pending question buttons again so the flow continues smoothly
-        await new Promise(r => setTimeout(r, 1200));
-        await sendStepQuestion(phone, currentStep, false);
+        // After answering their query, present buttons only if AI didn't already ask a natural follow-up question
+        if (!aiResult.reply.includes('?')) {
+          await new Promise(r => setTimeout(r, 1200));
+          await sendStepQuestion(phone, currentStep, false);
+        }
       } catch (err: any) {
         console.error('[Chatbot] ❌ Error answering question with LLM:', err?.message || err);
         await sendTyping(phone, 'paused');

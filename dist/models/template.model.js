@@ -18,6 +18,7 @@ const templateSchema = new mongoose_1.Schema({
     footer: { type: String, default: null, trim: true },
     type: { type: String, enum: ['text', 'advertise'], default: 'text' },
     options: { type: [String], default: [] },
+    isDefault: { type: Boolean, default: false, index: true },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 exports.default = (0, mongoose_1.model)('Template', templateSchema);

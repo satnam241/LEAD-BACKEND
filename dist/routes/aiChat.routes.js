@@ -4,8 +4,9 @@ const express_1 = require("express");
 const adminAuth_1 = require("../middleware/adminAuth");
 const aiChat_controller_1 = require("../controllers/aiChat.controller");
 const router = (0, express_1.Router)();
-// Health and Messages
+// Health, Messages, and Test Diagnostic
 router.get('/health', adminAuth_1.adminAuth, aiChat_controller_1.getAiHealth);
+router.post('/test-query', adminAuth_1.adminAuth, aiChat_controller_1.testAiQuery);
 router.get('/messages/:leadId', adminAuth_1.adminAuth, aiChat_controller_1.getLeadMessages);
 router.patch('/resume/:leadId', adminAuth_1.adminAuth, aiChat_controller_1.resumeLeadAi);
 // Training and FAQs insertion/management

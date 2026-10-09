@@ -13,10 +13,11 @@ const whatsappService_1 = require("./whatsappService");
 const messageTemplates_1 = require("../utils/messageTemplates");
 const aiLearningService_1 = require("./aiLearningService");
 const sendMessageToLead = async ({ leadId, messageType, customMessage, adminEmail, }) => {
-    const lead = await lead_model_1.default.findById(leadId);
+    const lead = await lead_model_1.default.findById(leadId).populate('projectId');
     if (!lead)
         throw new Error("Lead not found");
-    const finalMessage = customMessage || lead.followUp?.message || (0, messageTemplates_1.getDefaultMessage)(lead.fullName);
+    const defaultMsg = await (0, messageTemplates_1.getResolvedDefaultMessage)(lead);
+    const finalMessage = customMessage || lead.followUp?.message || defaultMsg;
     // Auto-detect best channel if not specified
     let targetType = messageType || "whatsapp";
     if (!messageType) {
@@ -95,10 +96,11 @@ const sendMessageToLead = async ({ leadId, messageType, customMessage, adminEmai
 };
 exports.sendMessageToLead = sendMessageToLead;
 const scheduleMessageToLead = async ({ leadId, messageType = "whatsapp", customMessage, adminEmail, delayMinutes = 5, }) => {
-    const lead = await lead_model_1.default.findById(leadId);
+    const lead = await lead_model_1.default.findById(leadId).populate('projectId');
     if (!lead)
         throw new Error("Lead not found");
-    const finalMessage = customMessage || lead.followUp?.message || (0, messageTemplates_1.getDefaultMessage)(lead.fullName);
+    const defaultMsg = await (0, messageTemplates_1.getResolvedDefaultMessage)(lead);
+    const finalMessage = customMessage || lead.followUp?.message || defaultMsg;
     const sendAt = new Date(Date.now() + delayMinutes * 60 * 1000);
     const scheduled = await scheduledMessage_model_1.default.create({
         leadId: lead._id,

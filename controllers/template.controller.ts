@@ -13,6 +13,7 @@ interface CreateTemplateBody {
   footer?: string;
   type?: 'text' | 'advertise';
   options?: string[];
+  isDefault?: boolean;
 }
 
 export async function uploadTemplateImage(req: Request, res: Response): Promise<void> {
@@ -38,16 +39,49 @@ export async function uploadTemplateImage(req: Request, res: Response): Promise<
 
 export async function listTemplates(_req: Request, res: Response): Promise<void> {
   try {
-    const templates = await Template.find().sort({ createdAt: -1 }).lean();
+    const templates = await Template.find().sort({ isDefault: -1, createdAt: -1 }).lean();
     res.json(templates);
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch templates', error: (err as Error).message });
   }
 }
 
+export async function getDefaultTemplate(_req: Request, res: Response): Promise<void> {
+  try {
+    let template = await Template.findOne({ isDefault: true }).lean();
+    if (!template) {
+      // Find one named 'default' or 'welcome' or latest
+      template = await Template.findOne({ name: { $in: ['default', 'welcome', 'default_welcome'] } }).lean();
+    }
+    res.json({ success: true, template });
+  } catch (err: any) {
+    res.status(500).json({ message: 'Failed to fetch default template', error: err.message });
+  }
+}
+
+export async function setDefaultTemplate(req: Request, res: Response): Promise<void> {
+  try {
+    const { id } = req.params;
+    const template = await Template.findById(id);
+    if (!template) {
+      res.status(404).json({ message: 'Template not found' });
+      return;
+    }
+
+    // Set all others isDefault to false
+    await Template.updateMany({ _id: { $ne: template._id } }, { $set: { isDefault: false } });
+    template.isDefault = true;
+    await template.save();
+
+    res.json({ success: true, message: `Template "${template.label}" is now the default message template`, template });
+  } catch (err: any) {
+    res.status(500).json({ message: 'Failed to set default template', error: err.message });
+  }
+}
+
 export async function createTemplate(req: Request<unknown, unknown, CreateTemplateBody>, res: Response): Promise<void> {
   try {
-    const { name, label, bodyText, variables = [], header, imageUrl, footer, type, options = [] } = req.body;
+    const { name, label, bodyText, variables = [], header, imageUrl, footer, type, options = [], isDefault = false } = req.body;
 
     if (!name || !label || !bodyText) {
       res.status(400).json({ message: 'name, label and bodyText are required' });
@@ -75,6 +109,10 @@ export async function createTemplate(req: Request<unknown, unknown, CreateTempla
     // Determine type: if advertise specified or imageUrl/header/footer/options given, type is 'advertise'
     const finalType = type || (imageUrl || header || footer || (options && options.length > 0) ? 'advertise' : 'text');
 
+    if (isDefault) {
+      await Template.updateMany({}, { $set: { isDefault: false } });
+    }
+
     const template = await Template.create({
       name,
       label,
@@ -85,6 +123,7 @@ export async function createTemplate(req: Request<unknown, unknown, CreateTempla
       footer: footer?.trim() || null,
       type: finalType,
       options: Array.isArray(options) ? options.filter(Boolean) : [],
+      isDefault: !!isDefault,
     });
     res.status(201).json(template);
   } catch (err) {
@@ -94,7 +133,7 @@ export async function createTemplate(req: Request<unknown, unknown, CreateTempla
 
 export async function updateTemplate(req: Request, res: Response): Promise<void> {
   try {
-    const { label, bodyText, variables, header, imageUrl, footer, type, options } = req.body;
+    const { label, bodyText, variables, header, imageUrl, footer, type, options, isDefault } = req.body;
     const existing = await Template.findById(req.params.id);
     if (!existing) {
       res.status(404).json({ message: 'Template not found' });
@@ -120,6 +159,12 @@ export async function updateTemplate(req: Request, res: Response): Promise<void>
     if (footer !== undefined) updates.footer = footer ? footer.trim() : null;
     if (type !== undefined) updates.type = type;
     if (options !== undefined) updates.options = Array.isArray(options) ? options.filter(Boolean) : [];
+    if (isDefault !== undefined) {
+      updates.isDefault = !!isDefault;
+      if (isDefault) {
+        await Template.updateMany({ _id: { $ne: req.params.id } }, { $set: { isDefault: false } });
+      }
+    }
 
     const updated = await Template.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true });
     res.json(updated);

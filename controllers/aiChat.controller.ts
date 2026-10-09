@@ -343,3 +343,60 @@ export async function rejectQuestion(req: Request, res: Response): Promise<void>
     res.status(500).json({ success: false, error: err.message || 'Failed to dismiss question' });
   }
 }
+
+// POST /api/ai-chat/test-query - Test how AI evaluates a question in real-time
+export async function testAiQuery(req: Request, res: Response): Promise<void> {
+  try {
+    const { query, projectId } = req.body;
+    if (!query || !query.trim()) {
+      res.status(400).json({ success: false, error: 'Query is required for test' });
+      return;
+    }
+
+    const cleanQuery = query.trim();
+    let project: any = null;
+    if (projectId) {
+      project = await Project.findById(projectId).lean();
+    } else {
+      project = await Project.findOne({ isActive: true }).lean();
+    }
+
+    if (!project) {
+      res.status(404).json({ success: false, error: 'No active project found for test' });
+      return;
+    }
+
+    const { findDirectFaqAnswer, findCrossSellProject } = await import('../services/projectKnowledgeService');
+    const { isSiteVisitIntent, parseSlotDateTime, isHandoffRequested } = await import('../services/aiChatService');
+    const { extractAndSaveLeadPreferences } = await import('../services/aiLearningService');
+
+    const directFaqAnswer = findDirectFaqAnswer(project, cleanQuery);
+    const isSiteVisit = isSiteVisitIntent(cleanQuery);
+    const parsedSlot = isSiteVisit ? parseSlotDateTime(cleanQuery) : null;
+    const isHandoff = isHandoffRequested(cleanQuery);
+    const crossSell = await findCrossSellProject(project._id, cleanQuery);
+
+    const dummyId = new (await import('mongoose')).Types.ObjectId();
+    const simulatedProfile = await extractAndSaveLeadPreferences(dummyId, cleanQuery);
+
+    res.json({
+      success: true,
+      query: cleanQuery,
+      project: { id: project._id, name: project.name, location: project.location, priceRange: project.priceRange },
+      diagnostics: {
+        isSiteVisit,
+        parsedSlot,
+        isHandoff,
+        directFaqAnswer,
+        crossSellOpportunity: crossSell ? { name: crossSell.name, location: crossSell.location, priceRange: crossSell.priceRange } : null,
+        simulatedProfile,
+        matchedTrainedFaqs: (project.faqs || []).filter((f: any) =>
+          cleanQuery.toLowerCase().includes((f.question || '').toLowerCase()) ||
+          (f.keywords || []).some((k: string) => cleanQuery.toLowerCase().includes(k.toLowerCase()))
+        ),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Error testing AI query' });
+  }
+}

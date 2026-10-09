@@ -189,15 +189,80 @@ async function checkExactTimeAlerts() {
   }
 }
 
+// ── 🆕 Smart Inactive Follow-ups (Drip Re-engagement) ─────────────────────────
+// Re-engages dormant/ghosting leads after 24-48 hours of silence
+async function checkAndNudgeInactiveLeads() {
+  try {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+
+    const inactiveLeads = await Lead.find({
+      isDeleted: false,
+      phone: { $exists: true, $ne: "" },
+      status: { $in: ["new", "contacted", "interested"] },
+      reminderCount: { $lt: 3 }, // Maximum 3 nudges to maintain courtesy
+      $or: [
+        { lastReminderSent: null },
+        { lastReminderSent: { $lt: twentyFourHoursAgo } },
+      ],
+      updatedAt: { $gte: seventyTwoHoursAgo, $lte: twentyFourHoursAgo },
+    })
+      .populate("projectId", "name location")
+      .limit(20);
+
+    if (inactiveLeads.length === 0) {
+      return;
+    }
+
+    console.log(`[Smart Follow-up] Found ${inactiveLeads.length} inactive lead(s) for gentle re-engagement.`);
+
+    const { sendWhatsAppUnified } = await import("./whatsappService");
+    const ConversationMessage = (await import("../models/conversationMessage.model")).default;
+
+    for (const lead of inactiveLeads) {
+      if (!lead.phone) continue;
+
+      const projectName = (lead.projectId as any)?.name ? `*${(lead.projectId as any).name}*` : "our property";
+      const nudgeMessage = `Hi ${lead.fullName || "there"}! 👋 Hope you're doing well.\n\nMain ${projectName} ke regarding follow up kar raha tha. Kya aapko pricing aur project details review karne ka mauka mila?\n\nAgar aapka koi question hai, sample flat visit plan karna chahte hain, ya floor plan dekhna ho, toh zaroor batayein — I am here to help! 🏡`;
+
+      try {
+        await sendWhatsAppUnified(lead.phone, nudgeMessage);
+        console.log(`[Smart Follow-up] 📨 Dispatched gentle nudge to ${lead.phone} (${lead.fullName})`);
+
+        await Lead.findByIdAndUpdate(lead._id, {
+          $inc: { reminderCount: 1 },
+          $set: { lastReminderSent: now },
+        });
+
+        await ConversationMessage.create({
+          leadId: lead._id,
+          phone: lead.phone,
+          role: "assistant",
+          content: nudgeMessage,
+          createdAt: now,
+        }).catch(() => {});
+      } catch (sendErr: any) {
+        console.warn(`[Smart Follow-up] Failed to nudge ${lead.phone}:`, sendErr?.message || sendErr);
+      }
+    }
+  } catch (err: any) {
+    console.error("[Smart Follow-up] Error in checkAndNudgeInactiveLeads:", err?.message || err);
+  }
+}
+
 // ── Schedules ──────────────────────────────────────────────────────────────────
 export function startFollowupNotifier() {
   // Daily 9AM digest — overdue + due-today summary
   cron.schedule("0 9 * * *", checkAndNotify, { timezone: "Asia/Kolkata" });
 
-  // 🆕 Har 5 minute — jis exact time pe follow-up schedule hua usi time alert bhejo
+  // Har 5 minute — jis exact time pe follow-up schedule hua usi time alert bhejo
   cron.schedule("*/5 * * * *", checkExactTimeAlerts, { timezone: "Asia/Kolkata" });
 
-  console.log("Follow-up notifiers scheduled — daily 9:00 AM digest + every 5min exact-time alert");
+  // 🆕 Smart Inactive Follow-ups — Daily at 11:30 AM & 5:30 PM IST (respectful business hours)
+  cron.schedule("30 11,17 * * *", checkAndNudgeInactiveLeads, { timezone: "Asia/Kolkata" });
+
+  console.log("Follow-up notifiers scheduled — daily 9:00 AM digest + every 5min exact-time alert + smart inactive nudges (11:30 AM & 5:30 PM)");
 }
 
-export { checkAndNotify, checkExactTimeAlerts };
+export { checkAndNotify, checkExactTimeAlerts, checkAndNudgeInactiveLeads };

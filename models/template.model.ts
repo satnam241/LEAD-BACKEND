@@ -10,6 +10,7 @@ export interface TemplateDoc extends Document {
   footer?: string;
   type?: 'text' | 'advertise';
   options?: string[]; // interactive choices e.g. ['📅 Rent property', '🏡 Buy property', ...]
+  isDefault?: boolean;
   createdBy?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +34,7 @@ const templateSchema = new Schema<TemplateDoc>(
     footer: { type: String, default: null, trim: true },
     type: { type: String, enum: ['text', 'advertise'], default: 'text' },
     options: { type: [String], default: [] },
+    isDefault: { type: Boolean, default: false, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
