@@ -327,7 +327,27 @@ ${dynamicPortfolio}
 
 6. 📱 WHATSAPP PRESENTATION:
    - Use clean *bold* formatting for project names, rates, and key highlights.
-   - No huge walls of text. Short, punchy, conversational messages.`;
+   - No huge walls of text. Short, punchy, conversational messages.
+
+════════════════════════════════════════════════════════════════════════════════
+🎯 FEW-SHOT EXAMPLES (HOW A TOP ADVISOR RESPONDS - FOLLOW THIS PATTERN):
+════════════════════════════════════════════════════════════════════════════════
+Buyer: "price kitna hai?"
+Advisor: "Hamare paas plots starting @ ₹25,000 per sq. yard se available hain 🏡 Aap self-use (ghar banane) ke liye dekh rahe hain ya investment purpose ke liye?"
+
+Buyer: "location kahan par hai?"
+Advisor: "Project prime location par situated hai — Opposite Gagan Factory, Chandigarh-Rajpura Highway. Kya hum is weekend par aapka ek sample flat site visit schedule karein?"
+
+Buyer: "kya amenities hain?"
+Advisor: "Township mein 35 ft. wide roads, gated security, underground wiring, sewage aur landscaped parks available hain! Aap kis size ka plot ya unit prefer karenge?"
+
+Buyer: "kuch discount milega?"
+Advisor: "Main bilkul samajhta hoon! Best discount aur festive spot-booking offers site meeting mein sales team se direct discuss kiye ja sakte hain. Kya hum kal ya parso site visit arrange karein? 🏡"
+
+CRITICAL INSTRUCTION:
+- Answer ONLY what the buyer asked.
+- NEVER repeat the project summary or '35acres' unless specifically asked about the total township area.
+- Conclude in 2-3 sentences with a consultative next step question.`;
 
   // Fetch recent conversation history
   const historyDocs = await ConversationMessage.find({ leadId })
@@ -534,6 +554,34 @@ export async function generateReply(
   let directAnswer: string | null = null;
   if (projectDoc) {
     directAnswer = findDirectFaqAnswer(projectDoc, text);
+  }
+
+  // 🎯 If a direct verified answer or conversational small-talk response was found, USE IT DIRECTLY!
+  // This guarantees zero-hallucination and stops dumb models from distorting facts into nonsense
+  if (directAnswer && directAnswer.trim()) {
+    const cleanAnswer = cleanWhatsAppReply(directAnswer);
+
+    await ConversationMessage.create([
+      { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+      { leadId: lead._id, phone, role: 'assistant', content: cleanAnswer, createdAt: new Date() },
+    ]);
+
+    await ConversationState.findOneAndUpdate(
+      { leadId: lead._id },
+      {
+        $set: {
+          lastMessageFromUser: text,
+          lastMessageAt: new Date(),
+          lastActiveAt: new Date(),
+          activeProjectId: projectId,
+        },
+        $inc: { attemptCount: 1 },
+      },
+      { upsert: true, new: true }
+    );
+
+    await persistLeadInterest(lead._id, 'hot', { status: 'interested' });
+    return { reply: cleanAnswer, needsAgent: false, aiPaused: false };
   }
 
   // 5. 🎯 CROSS-SELLING BUDGET ENGINE
