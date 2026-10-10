@@ -337,7 +337,10 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     'who', 'are', 'you', 'how', 'is', 'am', 'was', 'were', 'the', 'in', 'to', 'for',
     'of', 'and', 'a', 'an', 'at', 'by', 'do', 'does', 'did', 'kya', 'hai', 'hain',
     'ho', 'h', 'ka', 'ki', 'ke', 'ko', 'se', 'me', 'mein', 'par', 'pe', 'bhi',
-    'kuch', 'batao', 'bataiye', 'sir', 'ji', 'bhai', 'yaar', 'yr', 'please', 'tell'
+    'kuch', 'batao', 'bataiye', 'sir', 'ji', 'bhai', 'yaar', 'yr', 'please', 'tell',
+    'this', 'that', 'these', 'those', 'project', 'property', 'details', 'detail',
+    'info', 'information', 'send', 'give', 'show', 'bhejo', 'bhejiye', 'karo',
+    'chahiye', 'chahie', 'humein', 'mujhe', 'aap', 'mera', 'meri', 'mere'
   ]);
 
   const meaningfulTokens = cleanMsg
@@ -345,7 +348,7 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     .map(t => t.trim())
     .filter(t => t.length >= 3 && !STOP_WORDS.has(t));
 
-  // If user query only had stop words (e.g. "who are you"), do NOT match random FAQs!
+  // If user query only had generic/stop words (e.g. "Details of this project"), do NOT match random FAQs!
   if (meaningfulTokens.length === 0) {
     return null;
   }
@@ -473,27 +476,43 @@ export async function getDynamicPortfolioCatalogue(
 export function isPropertyDetailsQuery(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase().trim();
-  const patterns = [
-    /\b(property|project)\s*details?\b/i,
-    /\bdetails?\s*(bhejo|do|batao|share|milegi|chahiye|send|please)\b/i,
-    /^(details?|detail|info|information)$/i,
-    /\bkya\s*(hai|h)\s*(project|property)\b/i,
-    /\bkya\s*(kya)?\s*(projects?|properties|options)\s*(hain|h)?\b/i,
-    /\boptions\s*(batao|kya|dikhao)\b/i,
-    /\ball\s*projects\b/i,
-    /\blist\s*of\s*projects\b/i,
-    /\bkonsa\s*project\b/i,
-    /\bkaun\s*se\s*projects?\b/i,
-    /\bwhat\s*projects?\b/i,
-    /\bwhich\s*projects?\b/i,
-    /\btell\s*me\s*about\s*(the\s*)?(property|project)\b/i,
-    /\babout\s*(the\s*)?(property|project)\b/i,
-    /डिटेल/i,
-    /प्रॉपर्टी डिटेल/i,
-    /प्रोजेक्ट डिटेल/i,
-    /जानकारी/i,
-  ];
-  return patterns.some(p => p.test(lower));
+
+  // Negative check: user says "not interested in details"
+  if (/(not\s+interested|don'?t\s+send|nhi\s+chahiye|mat\s+bhejo)/i.test(lower)) {
+    return false;
+  }
+
+  // 1. Any mention of detail / details (e.g. "Details of this project", "Details of this property", "send details", "property details")
+  if (/\b(details?|detail)\b/i.test(lower)) {
+    return true;
+  }
+
+  // 2. Direct follow-up commands like "send me", "send it", "bhejo", "share", "send"
+  if (/^(send\s+me|send\s+it|send|share|bhejo|bhejna|batao|share\s+karo|dikhao)$/i.test(lower)) {
+    return true;
+  }
+
+  // 3. Information, overview, brochure requests
+  if (/\b(info|information|overview|brochure|catalogue|features|specifications)\b/i.test(lower)) {
+    return true;
+  }
+
+  // 4. Inquiring about what projects / options are available
+  if (/(what\s+projects|which\s+projects|all\s+projects|options|kya\s+kya\s+project|konsa\s+project|kaun\s+se\s+project)/i.test(lower)) {
+    return true;
+  }
+
+  // 5. Natural property exploration phrases
+  if (/(tell\s+me\s+about|know\s+about|about\s+the|about\s+this|kya\s+hai|kya\s+h)\s+(the\s+|this\s+|our\s+)?(property|project|township|plots?|flats?)/i.test(lower)) {
+    return true;
+  }
+
+  // 6. Hindi / Devanagari details queries
+  if (/(डिटेल|जानकारी|प्रॉपर्टी|प्रोजेक्ट)/i.test(lower)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**

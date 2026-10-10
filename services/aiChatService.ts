@@ -461,9 +461,11 @@ Buyer: "kya amenities hain?"
 Advisor: "Township mein wide roads, gated security, underground wiring aur landscaped parks available hain! Aap kis size ka plot ya unit prefer karenge?"`
 }
 
-CRITICAL INSTRUCTION:
+CRITICAL INSTRUCTIONS:
 - Answer ONLY what the buyer asked.
 - STRICTLY adhere to [ ${detectedLang.toUpperCase()} ]. ZERO foreign language words!
+- NEVER EVER GIVE EMPTY PROMISES: NEVER say "Sure, I can send you the details" or "I will provide the details" without actually including the details in the same message!
+- If the buyer asks for details, brochure, or overview, IMMEDIATELY provide the complete property facts (Location, Pricing, Available Plot/Flat Sizes, Amenities, Possession) directly in this reply!
 - Conclude in 2-3 sentences with a consultative next step question.`;
 
   // Fetch recent conversation history
