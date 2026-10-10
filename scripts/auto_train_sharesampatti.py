@@ -128,7 +128,7 @@ def main():
     args = parser.parse_args()
 
     db = connect_db()
-    if not db:
+    if db is None:
         sys.exit(1)
 
     if not args.daemon:
