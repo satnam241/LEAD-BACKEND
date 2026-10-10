@@ -219,10 +219,10 @@ async function askLLM(messages, options) {
     const requestedMax = options?.maxTokens || parseInt(process.env.LLM_MAX_TOKENS || '400', 10);
     const maxTokens = Math.min(Math.max(requestedMax > 0 ? requestedMax : 400, 64), 1024);
     const temperature = options?.temperature !== undefined ? options.temperature : 0.3;
-    // 1. Google Gemini Key Pool (Multi-Key Auto-Failover + Quota Management)
+    // 1. Google Gemini Key Pool (Multi-Key Auto-Failover + Quota Management + Model Fallback)
     const pool = getGeminiKeyPool();
     if (pool.length > 0) {
-        const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const candidateModels = Array.from(new Set([process.env.GEMINI_MODEL, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'].filter(Boolean)));
         const now = Date.now();
         // Sort keys: available first, then lowest chatCount for fair load distribution
         const sortedPool = [...pool].sort((a, b) => {
@@ -235,37 +235,43 @@ async function askLLM(messages, options) {
         for (const keyEntry of sortedPool) {
             keyEntry.totalRequests++;
             keyEntry.lastUsedAt = new Date();
-            try {
-                console.log(`[Gemini Pool] 🤖 Calling Key #${keyEntry.index + 1} (${keyEntry.maskedKey} - ${model}) [Total chats: ${keyEntry.chatCount}]...`);
-                const response = await keyEntry.client.chat.completions.create({
-                    model,
-                    messages,
-                    max_tokens: maxTokens,
-                    temperature,
-                });
-                const raw = response.choices?.[0]?.message?.content || '';
-                const cleaned = cleanThinkTags(raw);
-                if (cleaned && cleaned.trim()) {
-                    keyEntry.chatCount++;
-                    lastKeyIndex = (keyEntry.index + 1) % pool.length;
-                    console.log(`[Gemini Pool] ✅ Key #${keyEntry.index + 1} (${keyEntry.maskedKey}) generated response! (Key Chat Count: ${keyEntry.chatCount})`);
-                    return cleaned;
+            let keySucceeded = false;
+            for (const m of candidateModels) {
+                try {
+                    console.log(`[Gemini Pool] 🤖 Calling Key #${keyEntry.index + 1} (${keyEntry.maskedKey} - ${m}) [Total chats: ${keyEntry.chatCount}]...`);
+                    const response = await keyEntry.client.chat.completions.create({
+                        model: m,
+                        messages,
+                        max_tokens: maxTokens,
+                        temperature,
+                    });
+                    const raw = response.choices?.[0]?.message?.content || '';
+                    const cleaned = cleanThinkTags(raw);
+                    if (cleaned && cleaned.trim()) {
+                        keyEntry.chatCount++;
+                        lastKeyIndex = (keyEntry.index + 1) % pool.length;
+                        console.log(`[Gemini Pool] ✅ Key #${keyEntry.index + 1} (${keyEntry.maskedKey}) generated response via ${m}! (Key Chat Count: ${keyEntry.chatCount})`);
+                        return cleaned;
+                    }
                 }
-            }
-            catch (geminiErr) {
-                keyEntry.errorCount++;
-                const status = geminiErr?.status || geminiErr?.statusCode || 0;
-                const errMsg = geminiErr?.message || String(geminiErr);
-                const isRateLimit = status === 429 || /rate limit|resource_exhausted|quota|429/i.test(errMsg);
-                if (isRateLimit) {
-                    keyEntry.rateLimitCount++;
-                    keyEntry.cooldownUntil = Date.now() + 60000; // 60s cooldown
-                    console.warn(`[Gemini Pool] ⚠️ Key #${keyEntry.index + 1} (${keyEntry.maskedKey}) hit quota limit (429)! Cooldown for 60s. Auto-switching to next key...`);
-                }
-                else {
+                catch (geminiErr) {
+                    keyEntry.errorCount++;
+                    const status = geminiErr?.status || geminiErr?.statusCode || 0;
+                    const errMsg = geminiErr?.message || String(geminiErr);
+                    const isRateLimit = status === 429 || /rate limit|resource_exhausted|quota|429/i.test(errMsg);
+                    if (isRateLimit) {
+                        keyEntry.rateLimitCount++;
+                        keyEntry.cooldownUntil = Date.now() + 60000; // 60s cooldown
+                        console.warn(`[Gemini Pool] ⚠️ Key #${keyEntry.index + 1} (${keyEntry.maskedKey}) hit quota limit (429)! Cooldown for 60s. Auto-switching to next key...`);
+                        break; // Switch to next key in pool
+                    }
+                    if (status === 404 || /not found|unsupported|does not exist/i.test(errMsg)) {
+                        console.warn(`[Gemini Pool] ⚠️ Model "${m}" not accessible on Key #${keyEntry.index + 1}, trying next candidate model...`);
+                        continue;
+                    }
                     console.error(`[Gemini Pool] ❌ Key #${keyEntry.index + 1} (${keyEntry.maskedKey}) error (${status}):`, errMsg);
+                    break; // Switch to next key
                 }
-                // Auto-switch: Continue loop to try next key in pool
             }
         }
         console.warn(`[Gemini Pool] ⚠️ All ${pool.length} Gemini key(s) exhausted/cooldown. Attempting fallback providers...`);

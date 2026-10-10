@@ -10,6 +10,7 @@ import {
   formatSingleProjectDetails,
   formatMultiProjectList,
   matchProjectFromSelection,
+  buildIntelligentRealEstateResponse,
 } from './projectKnowledgeService';
 import ConversationMessage from '../models/conversationMessage.model';
 import ConversationState from '../models/conversationState.model';
@@ -378,52 +379,91 @@ ${dynamicPortfolio}
    - IF THE BUYER ASKS OFF-TOPIC / OUT-OF-BOUND QUESTIONS (e.g. weather, cars, politics, personal):
      * Gracefully steer them back: "Haha, main toh aapka property consultant hoon! Par is project mein aapka dream home zaroor banwa sakta hoon 🏡 Kya aap location ya pricing explore karna chahenge?"
 
-3. 🛡️ MASTER REAL ESTATE OBJECTION HANDLING (NEVER GET DEFENSIVE):
+${
+  detectedLang === 'english'
+    ? `3. 🛡️ REAL ESTATE OBJECTION HANDLING (ENGLISH):
+   - OBJECTION: "The price is too high / out of budget":
+     * Empathize first: "I completely understand that budget is a crucial factor!"
+     * Value pitch: Highlight prime location connectivity, quality construction, and lifestyle amenities ensuring strong long-term appreciation.
+     * Soft Hook: Offer to schedule a private site visit to tour the sample flat in person or explore tailored flexible payment plans.
+   - OBJECTION: "Can I get a discount? / Is negotiation possible?":
+     * Explain: "Special festive privileges and spot-booking offers are discussed directly with our sales management during a site visit. Shall we schedule a site visit this weekend so you can explore the best direct offer?"
+   - OBJECTION: "Possession is late":
+     * Reassure: Construction is strictly on schedule under approved RERA guidelines with top-tier technology.`
+    : `3. 🛡️ MASTER REAL ESTATE OBJECTION HANDLING (NEVER GET DEFENSIVE):
    - OBJECTION: "Price bohot zyada hai / mehenga hai / budget se bahar hai":
      * Empathize first: "Main bilkul samajh sakta hoon budget ka importance!"
-     * Value pitch: Highlight prime location connectivity, superior construction quality (Mivan), and lifestyle amenities that justify the investment and ensure strong appreciation.
+     * Value pitch: Highlight prime location connectivity, superior construction quality, and lifestyle amenities that justify the investment and ensure strong appreciation.
      * Soft Hook: Suggest scheduling a private site visit to experience the actual sample flat quality in person, or suggest alternative configurations / payment plans.
    - OBJECTION: "Kuch discount milega kya / thoda rate kam karo / negotiation":
      * Do NOT bluntly say "No discounts". Instead explain: "Special festive benefits aur spot-booking offers builder management direct site meeting mein discuss karte hain. Kya hum aapke liye weekend par ek site visit arrange karein taaki aap sales head se direct best offer explore kar sakein?"
    - OBJECTION: "Possession late hai / time zyada hai":
-     * Reassure that construction is strictly on schedule under RERA guidelines with top-tier construction technology.
+     * Reassure that construction is strictly on schedule under RERA guidelines with top-tier construction technology.`
+}
 
 4. 🎯 CONSULTATIVE SELLING (ALWAYS GUIDE TO THE NEXT STEP):
    - NEVER just drop facts and go silent.
    - Keep every response concise: 2 to 4 sentences or clean WhatsApp bullet points.
-   - Always conclude each message with ONE natural, consultative qualifying question:
-     * "Aap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye?"
+   - Always conclude each message with ONE natural, consultative qualifying question matching [ ${detectedLang.toUpperCase()} ]:
+${
+  detectedLang === 'english'
+    ? `     * "Are you considering this property for personal residence (self-use) or as an investment?"
+     * "Do you prefer a 2 BHK or a more spacious 3 BHK configuration?"
+     * "Would you like to schedule a site visit this weekend to inspect the sample flat in person?"`
+    : `     * "Aap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye?"
      * "Aapki preference 2 BHK ke liye hai ya 3 BHK spacious layout ke liye?"
-     * "Kya hum is weekend par aapka ek sample flat site visit schedule karein?"
+     * "Kya hum is weekend par aapka ek sample flat site visit schedule karein?"`
+}
 
 5. 🔒 ZERO-HALLUCINATION / 100% FACTUAL GROUNDING:
    - All prices, sizes, amenities, RERA numbers, and possession dates must come STRICTLY from the database facts above.
    - NEVER invent rates, fake discounts, or imaginary flat numbers.
-   - If asked for specific live inventory (e.g. "5th floor corner flat available hai kya?"):
-     * Reassure: "Is specific unit availability ke liye main hamari sales team se live inventory chart check karwa deta hoon, wo aapko shortly update kar denge."
 
 6. 📱 WHATSAPP PRESENTATION:
    - Use clean *bold* formatting for project names, rates, and key highlights.
-   - No huge walls of text. Short, punchy, conversational messages.
+   - No huge walls of text. Short, punchy, consultative messages.
 
+${
+  detectedLang === 'english'
+    ? `════════════════════════════════════════════════════════════════════════════════
+🎯 FEW-SHOT EXAMPLES (HOW A TOP ADVISOR RESPONDS IN ENGLISH):
 ════════════════════════════════════════════════════════════════════════════════
-🎯 FEW-SHOT EXAMPLES (HOW A TOP ADVISOR RESPONDS - FOLLOW THIS PATTERN):
+Buyer: "What is the price?"
+Advisor: "Our properties start from ${projectFacts ? 'the rates listed above' : 'attractive market rates'} 🏡 Are you considering this for personal residence or as an investment?"
+
+Buyer: "Where is the property located?"
+Advisor: "The project is situated at a prime location with excellent highway connectivity. Would you like to schedule a site visit this weekend to see the property in person?"
+
+Buyer: "What amenities do you offer?"
+Advisor: "The property features 24/7 security, wide roads, underground utilities, and landscaped green parks! Which configuration or unit size best matches your requirement?"
+
+Buyer: "Can I get a discount?"
+Advisor: "I completely understand! Best festive benefits and spot-booking offers are discussed directly with our sales management during a site visit. Shall we arrange a visit for this weekend? 🏡"`
+    : detectedLang === 'hindi'
+    ? `════════════════════════════════════════════════════════════════════════════════
+🎯 FEW-SHOT EXAMPLES (HINDI DEVANAGARI):
+════════════════════════════════════════════════════════════════════════════════
+Buyer: "कीमत क्या है?"
+Advisor: "प्रॉपर्टी की शुरुआती दरें उपलब्ध हैं 🏡 क्या आप खुद रहने के लिए देख रहे हैं या निवेश के लिए?"
+
+Buyer: "लोकेशन कहाँ पर है?"
+Advisor: "प्रोजेक्ट प्राइम लोकेशन पर स्थित है। क्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें?"`
+    : `════════════════════════════════════════════════════════════════════════════════
+🎯 FEW-SHOT EXAMPLES (HINGLISH):
 ════════════════════════════════════════════════════════════════════════════════
 Buyer: "price kitna hai?"
-Advisor: "Hamare paas plots starting @ ₹25,000 per sq. yard se available hain 🏡 Aap self-use (ghar banane) ke liye dekh rahe hain ya investment purpose ke liye?"
+Advisor: "Hamare paas plots starting rates se available hain 🏡 Aap self-use (ghar banane) ke liye dekh rahe hain ya investment purpose ke liye?"
 
 Buyer: "location kahan par hai?"
-Advisor: "Project prime location par situated hai — Opposite Gagan Factory, Chandigarh-Rajpura Highway. Kya hum is weekend par aapka ek sample flat site visit schedule karein?"
+Advisor: "Project prime location par situated hai. Kya hum is weekend par aapka ek sample flat site visit schedule karein?"
 
 Buyer: "kya amenities hain?"
-Advisor: "Township mein 35 ft. wide roads, gated security, underground wiring, sewage aur landscaped parks available hain! Aap kis size ka plot ya unit prefer karenge?"
-
-Buyer: "kuch discount milega?"
-Advisor: "Main bilkul samajhta hoon! Best discount aur festive spot-booking offers site meeting mein sales team se direct discuss kiye ja sakte hain. Kya hum kal ya parso site visit arrange karein? 🏡"
+Advisor: "Township mein wide roads, gated security, underground wiring aur landscaped parks available hain! Aap kis size ka plot ya unit prefer karenge?"`
+}
 
 CRITICAL INSTRUCTION:
 - Answer ONLY what the buyer asked.
-- NEVER repeat the project summary or '35acres' unless specifically asked about the total township area.
+- STRICTLY adhere to [ ${detectedLang.toUpperCase()} ]. ZERO foreign language words!
 - Conclude in 2-3 sentences with a consultative next step question.`;
 
   // Fetch recent conversation history
@@ -458,7 +498,10 @@ export async function generateReply(
   projectId: Types.ObjectId,
   contextNote?: string
 ): Promise<{ reply: string; needsAgent: boolean; aiPaused: boolean }> {
-  // 1. Extract and profile lead preferences (budget, unit, timeline, purpose) from message
+  // 1. Detect language immediately for 100% strict adherence
+  const lang = detectLanguage(text);
+
+  // 2. Extract and profile lead preferences (budget, unit, timeline, purpose) from message
   const profiled = await extractAndSaveLeadPreferences(lead._id, text).catch(() => ({}));
   const currentLead = (await Lead.findById(lead._id).lean()) || lead;
 
@@ -467,7 +510,7 @@ export async function generateReply(
     projectDoc = await Project.findById(projectId).lean();
   }
 
-  // 2. 🏡 INTERACTIVE SITE VISIT SLOT BOOKING ENGINE
+  // 3. 🏡 INTERACTIVE SITE VISIT SLOT BOOKING ENGINE
   if (isSiteVisitIntent(text)) {
     const slot = parseSlotDateTime(text);
 
@@ -528,7 +571,12 @@ export async function generateReply(
         ctaText: 'Open Lead in CRM →',
       }).catch(err => console.error('[Site Visit] Support alert error:', err));
 
-      const confirmReply = `🎉 *Site Visit Confirmed!*\n\nAapka sample flat visit schedule kar diya gaya hai:\n\n📅 *Slot:* ${slot.formattedSlot}\n📍 *Project:* ${projectDoc?.name || 'Our Property'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nHamare Senior Relationship Manager site par aapko receive karenge aur complete property tour denge. Agar aapko location direction chahiye ya time reschedule karna ho, toh bas yahan reply kar dein! 🏡`;
+      let confirmReply = `🎉 *Site Visit Confirmed!*\n\nAapka sample flat visit schedule kar diya gaya hai:\n\n📅 *Slot:* ${slot.formattedSlot}\n📍 *Project:* ${projectDoc?.name || 'Our Property'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nHamare Senior Relationship Manager site par aapko receive karenge aur complete property tour denge. Agar aapko location direction chahiye ya time reschedule karna ho, toh bas yahan reply kar dein! 🏡`;
+      if (lang === 'english') {
+        confirmReply = `🎉 *Site Visit Confirmed!*\n\nYour sample flat visit has been scheduled:\n\n📅 *Slot:* ${slot.formattedSlot}\n📍 *Project:* ${projectDoc?.name || 'Our Property'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nOur Senior Relationship Manager will welcome you at the site and provide a complete property walkthrough. Feel free to reply here if you need location directions or wish to reschedule! 🏡`;
+      } else if (lang === 'hindi') {
+        confirmReply = `🎉 *साइट विजिट कन्फर्म!*\n\nआपका सैंपल फ्लैट विजिट शेड्यूल कर दिया गया है:\n\n📅 *स्लॉट:* ${slot.formattedSlot}\n📍 *प्रोजेक्ट:* ${projectDoc?.name || 'प्रॉपर्टी'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nहमारे सीनियर रिलेशनशिप मैनेजर साइट पर आपका स्वागत करेंगे और पूरा टूर देंगे। लोकेशन या समय बदलने के लिए यहाँ रिप्लाई करें! 🏡`;
+      }
 
       await ConversationMessage.create([
         { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
@@ -550,10 +598,28 @@ export async function generateReply(
       );
 
       await persistLeadInterest(lead._id, 'hot', { status: 'interested' });
+
+      logConversationForTraining({
+        leadId: lead._id,
+        phone,
+        language: lang,
+        detectedIntent: 'site_visit_confirmed',
+        projectId,
+        projectName: projectDoc?.name || 'Bhole Baba Investments',
+        userMessage: text,
+        aiResponse: confirmReply,
+        source: 'whatsapp',
+      }).catch(() => {});
+
       return { reply: confirmReply, needsAgent: false, aiPaused: false };
     } else {
       // Site visit intent expressed, but no specific date/time given yet -> offer consultative slots
-      const slotOfferReply = `Bilkul! Hum aapka sample flat visit zaroor schedule kar dete hain taaki aap construction quality, layout aur actual sample flat khud dekh sakein 🏡\n\nKya aap *Saturday* ya *Sunday* mein visit karna chahenge? Aur kaun sa time aapke liye best rahega — *Morning (11:00 AM)* ya *Evening (4:00 PM)*?`;
+      let slotOfferReply = `Bilkul! Hum aapka sample flat visit zaroor schedule kar dete hain taaki aap construction quality, layout aur actual sample flat khud dekh sakein 🏡\n\nKya aap *Saturday* ya *Sunday* mein visit karna chahenge? Aur kaun sa time aapke liye best rahega — *Morning (11:00 AM)* ya *Evening (4:00 PM)*?`;
+      if (lang === 'english') {
+        slotOfferReply = `Certainly! We would love to schedule your sample flat visit so you can inspect the construction quality, spacious layouts, and actual site in person 🏡\n\nWould you prefer visiting this *Saturday* or *Sunday*? And which time works best for you — *Morning (11:00 AM)* or *Evening (4:00 PM)*?`;
+      } else if (lang === 'hindi') {
+        slotOfferReply = `बिल्कुल! हम आपका सैंपल फ्लैट विजिट ज़रूर शेड्यूल कर देते हैं ताकि आप कंस्ट्रक्शन क्वालिटी और लेआउट खुद देख सकें 🏡\n\nक्या आप *शनिवार* या *रविवार* को आना चाहेंगे? आपके लिए कौन सा समय सही रहेगा — *सुबह (11:00 AM)* या *शाम (4:00 PM)*?`;
+      }
 
       await ConversationMessage.create([
         { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
@@ -575,6 +641,19 @@ export async function generateReply(
       );
 
       await persistLeadInterest(lead._id, 'hot', { status: 'interested' });
+
+      logConversationForTraining({
+        leadId: lead._id,
+        phone,
+        language: lang,
+        detectedIntent: 'site_visit_inquiry',
+        projectId,
+        projectName: projectDoc?.name || 'Bhole Baba Investments',
+        userMessage: text,
+        aiResponse: slotOfferReply,
+        source: 'whatsapp',
+      }).catch(() => {});
+
       return { reply: slotOfferReply, needsAgent: false, aiPaused: false };
     }
   }
@@ -709,8 +788,12 @@ export async function generateReply(
 
   // 4. Check for explicit human agent / callback request
   if (isHandoffRequested(text)) {
-    const handoffReply =
-      "Sure! I have shared your request with our senior sales & advisory team. A dedicated property advisor will contact you shortly.";
+    let handoffReply = "Bilkul! Maine aapki request Bhole Baba Investments ki senior sales & advisory team ko forward kar di hai. Hamare senior advisor aapse jald hi call par connect karenge.";
+    if (lang === 'english') {
+      handoffReply = "Certainly! I have forwarded your request to our senior sales & advisory team at *Bhole Baba Investments*. A dedicated property advisor will call you shortly.";
+    } else if (lang === 'hindi') {
+      handoffReply = "बिल्कुल! मैंने आपका अनुरोध *भोले बाबा इन्वेस्टमेंट्स* की सीनियर एडवाइजरी टीम को भेज दिया है। हमारे सलाहकार जल्द ही आपसे संपर्क करेंगे।";
+    }
 
     // Save user and assistant messages
     await ConversationMessage.create([
@@ -734,10 +817,8 @@ export async function generateReply(
       { upsert: true, new: true }
     );
 
-    // Active conversational request -> definitely HOT!
     await persistLeadInterest(lead._id, 'hot', { status: 'interested' });
 
-    // Send dual support email notification about handoff request
     sendSupportAlert({
       subject: `🚨 Human Agent Requested: ${currentLead.fullName || 'Lead'}`,
       badge: '👤 Agent Handoff',
@@ -752,10 +833,20 @@ export async function generateReply(
       ctaText: 'Open Lead & Call Customer →',
     }).catch(() => {});
 
+    logConversationForTraining({
+      leadId: lead._id,
+      phone,
+      language: lang,
+      detectedIntent: 'agent_handoff',
+      projectId,
+      projectName: projectDoc?.name || 'Bhole Baba Investments',
+      userMessage: text,
+      aiResponse: handoffReply,
+      source: 'whatsapp',
+    }).catch(() => {});
+
     return { reply: handoffReply, needsAgent: true, aiPaused: true };
   }
-
-  const lang = detectLanguage(text);
 
   // ─────────────────────────────────────────────────────────────
   // 5. 🎯 PROJECT SELECTION MATCHING (e.g. user typed "1", "2", or project name)
@@ -811,20 +902,16 @@ export async function generateReply(
     let targetProject = projectDoc;
 
     if (activeProjects.length <= 1) {
-      // Single project in DB -> Directly return that project's complete details
       const singleProj = activeProjects[0] || projectDoc;
       if (singleProj) {
         detailsReply = formatSingleProjectDetails(singleProj, lang);
         targetProject = singleProj;
       }
     } else {
-      // Multiple projects in DB:
-      // If user asks "what projects do you have" or "options" or has not selected a project yet:
       const askingPortfolio = /all\s*projects|kya\s*(kya)?\s*project|options|list|kaun\s*se\s*project|konsa\s*project|what\s*projects|which\s*projects/i.test(text);
       if (askingPortfolio || !projectDoc) {
         detailsReply = formatMultiProjectList(activeProjects, lang);
       } else {
-        // User already has an active project: Give that project's full details!
         detailsReply = formatSingleProjectDetails(projectDoc, lang);
       }
     }
@@ -883,16 +970,30 @@ export async function generateReply(
   }
 
   // Check Universal First Welcome Message if user sent a greeting
-  if (!directAnswer && /^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(text.toLowerCase().trim())) {
-    const { getGlobalWelcomeMessage } = await import('./botSettingService');
-    const globalMsg = await getGlobalWelcomeMessage();
-    if (globalMsg && globalMsg.trim()) {
-      directAnswer = globalMsg.trim();
+  const isGreeting = /^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(text.toLowerCase().trim());
+  if (!directAnswer && isGreeting) {
+    if (lang === 'english') {
+      directAnswer = `Hello! Welcome to *Bhole Baba Investments* Real Estate 🏡\n\nI am your dedicated AI Property Consultant. How can I assist you today? You can ask me about our residential & commercial projects, latest pricing, location, available layouts, or schedule a site visit.`;
+    } else {
+      const { getGlobalWelcomeMessage } = await import('./botSettingService');
+      const globalMsg = await getGlobalWelcomeMessage();
+      if (globalMsg && globalMsg.trim()) {
+        directAnswer = globalMsg.trim();
+      }
     }
   }
 
-  // 🎯 If a direct verified answer or conversational small-talk response was found, USE IT DIRECTLY!
-  // This guarantees zero-hallucination and stops dumb models from distorting facts into nonsense
+  // If user is in English mode, ensure directAnswer does not leak Hindi
+  if (directAnswer && lang === 'english') {
+    const hasHindi = /[\u0900-\u097F]|\b(hai|hain|kya|aap|karein|batao|humare|paas|se)\b/i.test(directAnswer);
+    if (hasHindi) {
+      // Re-route through LLM with English constraint so it gets translated cleanly
+      contextNote = `${contextNote ? `${contextNote}\n` : ''}VERIFIED DATABASE FACT: "${directAnswer}". Translate/express this fact in 100% PURE, PROFESSIONAL ENGLISH ONLY!`;
+      directAnswer = null;
+    }
+  }
+
+  // 🎯 If a direct verified answer was found matching user language, use it!
   if (directAnswer && directAnswer.trim()) {
     const cleanAnswer = cleanWhatsAppReply(directAnswer);
 
@@ -933,7 +1034,6 @@ export async function generateReply(
   }
 
   // 8. 🎯 CROSS-SELLING BUDGET ENGINE
-  // If user mentions a specific budget lower than current project or asks for cheaper options
   let crossSellNote = '';
   const statedBudget = currentLead.whatIsYourBudget || text;
   const isAskingCheaper = /sasta|saste|budget kam|lower budget|affordable|cheap|less price|kam rate/i.test(text);
@@ -944,12 +1044,8 @@ export async function generateReply(
     }
   }
 
-  // Define smart fallback so user NEVER gets an empty or raw dumped copy-paste message
-  const smartFallback =
-    directAnswer ||
-    (lang === 'english'
-      ? `I understand your interest regarding *${projectDoc?.name || 'our properties at Bhole Baba Investments'}*! We have prime options available starting @ ${projectDoc?.priceRange || 'best market rates'}. Would you like to check the location, plot sizes, or schedule a site visit this weekend? 🏡`
-      : `Main aapki baat samajh gaya regarding *${projectDoc?.name || 'Bhole Baba Investments properties'}*! Hamare paas yahan prime options available hain starting @ ${projectDoc?.priceRange || 'best market rates'}. Kya aap location, plot sizes ya is weekend par site visit ke baare mein jaanna chahte hain? 🏡`);
+  // Intelligent Contextual Fallback synthesized from DB: NEVER returns a repeated or dumb 1-liner!
+  const smartFallback = buildIntelligentRealEstateResponse(projectDoc, text, lang, activeProjects);
 
   // 6. Build system and conversation messages with dynamic facts, portfolio, and guardrails
   let effectiveContextNote = directAnswer

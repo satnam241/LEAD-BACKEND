@@ -13,6 +13,7 @@ exports.isPropertyDetailsQuery = isPropertyDetailsQuery;
 exports.formatSingleProjectDetails = formatSingleProjectDetails;
 exports.formatMultiProjectList = formatMultiProjectList;
 exports.matchProjectFromSelection = matchProjectFromSelection;
+exports.buildIntelligentRealEstateResponse = buildIntelligentRealEstateResponse;
 const project_model_1 = __importDefault(require("../models/project.model"));
 async function getProjectFacts(projectId, userMessage) {
     const project = await project_model_1.default.findById(projectId).lean();
@@ -111,31 +112,56 @@ function parsePriceToLakhs(str) {
 }
 function detectLanguage(text) {
     if (!text)
-        return 'hinglish';
+        return 'english';
     // 1. Pure Hindi Devanagari script (Unicode range 0900-097F)
     if (/[\u0900-\u097F]/.test(text)) {
         return 'hindi';
     }
-    // 2. Hinglish (Roman Hindi tokens)
-    const hinglishTokens = [
-        'kya', 'hai', 'hain', 'h', 'ka', 'ki', 'ke', 'ko', 'se', 'me', 'mein', 'par',
-        'pe', 'kitna', 'kitne', 'kitni', 'kahan', 'kaha', 'kab', 'batao', 'batayein',
-        'bhai', 'sir', 'ji', 'kr', 'karein', 'karna', 'hoga', 'hogi', 'chahiye',
-        'dekhna', 'lena', 'saste', 'sasta', 'mehenga', 'accha', 'achha', 'thik',
-        'ha', 'haan', 'nahi', 'nhi', 'na', 'bhi', 'paas', 'kaise', 'kese', 'kon',
-        'kaun', 'aap', 'tum', 'mera', 'meri', 'mere', 'hum', 'humare', 'apna',
-        'baje', 'kal', 'aaj', 'parso', 'subah', 'shaam', 'dopahar', 'raat', 'kuch',
-        'chhat', 'gadi', 'bache', 'naam', 'sun', 'suno', 'btao', 'plz', 'kripya',
-        'batana', 'pata', 'yr', 'dost', 'bhejo', 'bhejna', 'dekh', 'dekho', 'bhejiye',
-        'karwa', 'karwana', 'bolo', 'bata'
-    ];
     const lower = text.toLowerCase();
     const words = lower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
+    if (words.length === 0)
+        return 'english';
+    // Distinct Roman Hindi tokens that NEVER collide with valid English words
+    const distinctHinglishTokens = new Set([
+        'kya', 'hai', 'hain', 'mein', 'kitna', 'kitne', 'kitni', 'kahan', 'kaha',
+        'batao', 'batayein', 'bataiye', 'chahiye', 'chahie', 'hoga', 'hogi', 'honge',
+        'karna', 'karein', 'kare', 'kaise', 'kese', 'accha', 'achha', 'theek', 'thik',
+        'sasta', 'saste', 'mehenga', 'mehenge', 'paas', 'bhi', 'kuch', 'bhejo',
+        'bhejiye', 'dekho', 'dekhna', 'btao', 'kr', 'nhi', 'nahi', 'raha', 'rahi',
+        'rahe', 'humein', 'aapko', 'mujhe', 'mera', 'meri', 'mere', 'humara',
+        'humari', 'kaun', 'konsa', 'konsi', 'kaunsa', 'kaunsi', 'yaar', 'dost',
+        'bolo', 'karwa', 'karwana', 'subah', 'shaam', 'dopahar', 'chhat', 'gaadi',
+        'gadi', 'bache', 'bata', 'batana', 'pata', 'dhanyawad', 'shukriya', 'namaste',
+        'pranam', 'apna', 'apne', 'apni', 'bta', 'krna', 'kro', 'karo', 'gandu'
+    ]);
+    // Common English words in real-estate & daily chat
+    const commonEnglishWords = new Set([
+        'the', 'is', 'are', 'am', 'was', 'were', 'will', 'would', 'could', 'should',
+        'can', 'please', 'tell', 'give', 'send', 'show', 'property', 'project',
+        'location', 'price', 'pricing', 'details', 'brochure', 'visit', 'available',
+        'apartment', 'flat', 'plots', 'villa', 'about', 'want', 'looking', 'for',
+        'have', 'has', 'had', 'any', 'some', 'this', 'that', 'these', 'those',
+        'good', 'morning', 'afternoon', 'evening', 'hello', 'hi', 'hey', 'thank',
+        'thanks', 'you', 'your', 'my', 'our', 'we', 'they', 'them', 'their', 'i',
+        'me', 'call', 'contact', 'need', 'interested', 'rate', 'cost', 'where',
+        'what', 'which', 'who', 'how', 'when', 'why', 'sir', 'yes', 'no', 'okay',
+        'ok', 'sure', 'fine', 'ready', 'booking', 'budget', 'bhk', 'sqft', 'sqyd',
+        'size', 'amenities', 'road', 'sector', 'highway', 'park', 'pool', 'gym',
+        'help', 'assist', 'know', 'much', 'like', 'schedule', 'book'
+    ]);
+    let hinglishCount = 0;
+    let englishCount = 0;
     for (const w of words) {
-        if (hinglishTokens.includes(w)) {
-            return 'hinglish';
-        }
+        if (distinctHinglishTokens.has(w))
+            hinglishCount++;
+        if (commonEnglishWords.has(w))
+            englishCount++;
     }
+    // Only classify as Hinglish if distinct Hinglish tokens are present and outnumber/equal English
+    if (hinglishCount > 0 && hinglishCount >= englishCount) {
+        return 'hinglish';
+    }
+    // Default strictly to English
     return 'english';
 }
 /**
@@ -154,10 +180,13 @@ function findDirectFaqAnswer(project, userMessage) {
     // ─────────────────────────────────────────────────────────────
     // FIRST MESSAGE & INITIAL GREETINGS
     if (/^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(rawLower) && rawLower.split(/\s+/).length <= 4) {
-        if (project?.welcomeMessage && project.welcomeMessage.trim()) {
-            return project.welcomeMessage.trim();
+        if (lang === 'english') {
+            return `Hello! Welcome to *Bhole Baba Investments* Real Estate 🏡\n\nI am your dedicated AI Property Consultant. I am here to help you explore our prime residential & commercial projects, pricing, prime locations, unit layouts, or schedule a site visit.\n\nWhich project or detail would you like to explore today?`;
         }
-        return null;
+        if (lang === 'hindi') {
+            return `नमस्ते! *भोले बाबा इन्वेस्टमेंट्स* रियल एस्टेट में आपका स्वागत है 🏡\n\nमैं आपका AI प्रॉपर्टी कंसलटेंट हूँ। हमारे पास जो भी प्रमुख प्रोजेक्ट्स हैं, उनकी लोकेशन, लाइव कीमतें, लेआउट व साइट विजिट की जानकारी के लिए मैं यहाँ उपस्थित हूँ।\n\nआप किस प्रोजेक्ट या प्रॉपर्टी के बारे में जानना चाहते हैं?`;
+        }
+        return `Hello! *Bhole Baba Investments* Real Estate mein aapka swagat hai 🏡\n\nMain aapka AI Property Consultant hoon. Hamare paas jo bhi prime properties aur projects hain, unki live pricing, location, unit sizes aur site visit ke regarding main aapki poori madad karunga.\n\nAap kis project ya property ki details dekhna chahenge?`;
     }
     if (/(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are|aap kya ho|kya kaam hai|kya karte ho|आप कौन|तुम कौन|क्या नाम|कौन हो|कौन हैं)/i.test(rawLower)) {
         if (lang === 'english') {
@@ -551,5 +580,87 @@ function matchProjectFromSelection(text, activeProjects) {
         }
     }
     return null;
+}
+/**
+ * Master Real Estate Response Synthesizer:
+ * Takes DB verified facts and generates an immediate, high-quality, consultative response
+ * strictly adhering to the user's language (English, Hindi, Hinglish).
+ * This ensures that whether LLM is active or on fallback, the user NEVER receives
+ * a repeated or unsatisfactory reply!
+ */
+function buildIntelligentRealEstateResponse(project, userMessage, lang, activeProjects = []) {
+    const rawLower = (userMessage || '').toLowerCase().trim();
+    // 1. Direct verified answer from FAQs or attributes
+    const direct = findDirectFaqAnswer(project, userMessage);
+    if (direct) {
+        return direct;
+    }
+    // 2. Asking about Projects / Available Portfolio
+    const askingProjects = /projects?|options|properties|portfolio|list|what do you have|kya kya|kaun se/i.test(rawLower);
+    if (askingProjects && activeProjects && activeProjects.length > 1) {
+        return formatMultiProjectList(activeProjects, lang);
+    }
+    // 3. Asking about Price / Rates
+    const isAskingPrice = /price|rate|cost|budget|kitna|kitne|pricing|amount|lakh|cr/i.test(rawLower);
+    if (isAskingPrice && project?.priceRange) {
+        if (lang === 'english') {
+            let r = `The pricing for *${project.name}* starts from *${project.priceRange}*.`;
+            if (project.unitTypes && project.unitTypes.length > 0) {
+                const uStr = project.unitTypes.map((u) => `• *${u.type}*: Starting from ${u.priceFrom || 'Best market price'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
+                r += `\n\n${uStr}`;
+            }
+            r += `\n\nAre you looking to buy for personal residence (self-use) or investment? 🏡`;
+            return r;
+        }
+        if (lang === 'hindi') {
+            let r = `*${project.name}* में कीमतें *${project.priceRange}* से शुरू होती हैं।`;
+            if (project.unitTypes && project.unitTypes.length > 0) {
+                const uStr = project.unitTypes.map((u) => `• *${u.type}*: ${u.priceFrom || 'उचित मूल्य'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
+                r += `\n\n${uStr}`;
+            }
+            r += `\n\nक्या आप यह प्रॉपर्टी खुद रहने के लिए देख रहे हैं या निवेश के लिए? 🏡`;
+            return r;
+        }
+        let r = `*${project.name}* mein price starting *${project.priceRange}* se hai.`;
+        if (project.unitTypes && project.unitTypes.length > 0) {
+            const uStr = project.unitTypes.map((u) => `• *${u.type}*: Starting from ${u.priceFrom || 'Best market price'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
+            r += `\n\n${uStr}`;
+        }
+        r += `\n\nAap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye? 🏡`;
+        return r;
+    }
+    // 4. Asking about Location / Connectivity
+    const isAskingLocation = /location|where|address|kahan|kahape|reach|distance|highway|road/i.test(rawLower);
+    if (isAskingLocation && project?.location) {
+        if (lang === 'english') {
+            return `*${project.name}* is ideally located at *${project.location}*.\n\nIt offers seamless highway connectivity and access to top schools, healthcare, and markets. Would you like to schedule a site visit this weekend to see the location in person? 🏡`;
+        }
+        if (lang === 'hindi') {
+            return `*${project.name}* प्राइम लोकेशन *${project.location}* पर स्थित है।\n\nयहाँ से मुख्य हाईवे, स्कूल और अस्पतालों की बेहतरीन कनेक्टिविटी है। क्या हम इस सप्ताहांत पर आपका साइट विजिट प्लान करें? 🏡`;
+        }
+        return `*${project.name}* prime location par situated hai — *${project.location}*.\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
+    }
+    // 5. Asking about Amenities / Facilities
+    const isAskingAmenities = /amenit|facilit|park|gym|pool|security|road|water|cctv|suvidha/i.test(rawLower);
+    if (isAskingAmenities && project?.amenities && project.amenities.length > 0) {
+        const aList = project.amenities.slice(0, 8).join(', ');
+        if (lang === 'english') {
+            return `*${project.name}* comes equipped with top-tier lifestyle amenities:\n\n✨ ${aList}\n\nWhich configuration (1 BHK, 2 BHK, 3 BHK, or plot) are you looking for? 🏡`;
+        }
+        if (lang === 'hindi') {
+            return `*${project.name}* में आधुनिक सुविधाएं उपलब्ध हैं:\n\n✨ ${aList}\n\nआपकी प्राथमिकता किस साइज या यूनिट के लिए है? 🏡`;
+        }
+        return `*${project.name}* mein world-class amenities provide ki gayi hain:\n\n✨ ${aList}\n\nAap kis size ka flat ya plot prefer kar rahe hain? 🏡`;
+    }
+    // 6. Default Consultative Response Grounded in Bhole Baba Investments
+    const projName = project?.name || 'our prime properties';
+    const priceSnippet = project?.priceRange ? `starting @ ${project.priceRange}` : 'at the best market rates';
+    if (lang === 'english') {
+        return `Thank you for reaching out to *Bhole Baba Investments*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a sample flat site visit this weekend? 🏡`;
+    }
+    if (lang === 'hindi') {
+        return `*भोले बाबा इन्वेस्टमेंट्स* में संपर्क करने के लिए धन्यवाद! *${projName}* में हमारे पास ${priceSnippet} बेहतरीन विकल्प उपलब्ध हैं।\n\nक्या आप लोकेशन, यूनिट साइज जानना चाहते हैं या इस सप्ताहांत पर साइट विजिट प्लान करना चाहेंगे? 🏡`;
+    }
+    return `*Bhole Baba Investments* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek sample flat site visit schedule karein? 🏡`;
 }
 //# sourceMappingURL=projectKnowledgeService.js.map

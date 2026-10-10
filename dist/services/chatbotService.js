@@ -333,17 +333,13 @@ async function handleUserInteraction(phone, text, lead) {
                 return;
             }
         }
-        // 4. Retrieve BotFlow steps
+        // 4. Check if user selected an explicit BotFlow button option
         const steps = await getActiveFlowSteps();
         const currentStepIndex = steps.findIndex(s => s.stepKey === state?.currentStep);
-        // ─────────────────────────────────────────────────────────────
-        // CASE A: User is in the middle of BotFlow questionnaire
-        // ─────────────────────────────────────────────────────────────
         if (state && currentStepIndex !== -1 && state.currentStep !== 'completed') {
             const currentStep = steps[currentStepIndex];
             const matched = matchOption(currentStep.options, text);
             if (matched) {
-                // --- Option matched (User clicked button or typed option) ---
                 state.answers.push({
                     step: currentStep.stepKey,
                     optionId: matched.id,
@@ -357,9 +353,7 @@ async function handleUserInteraction(phone, text, lead) {
                 const isLastStep = currentStepIndex >= steps.length - 1;
                 const interest = calculateInterest(state.attemptCount, isLastStep, true);
                 await persistLeadInterest(lead._id, interest, { status: 'interested' });
-                // Extract lead preferences (e.g. 2 BHK, 3 BHK)
                 (0, aiLearningService_1.extractAndSaveLeadPreferences)(lead._id, matched.title).catch(() => { });
-                // If option has detail text, send it
                 if (matched.detailText && matched.detailText.trim()) {
                     await (0, baileysService_1.sendText)(phone, matched.detailText.trim());
                 }
@@ -368,11 +362,14 @@ async function handleUserInteraction(phone, text, lead) {
                     state.completedAt = new Date();
                     await state.save();
                     console.log(`[Chatbot] 🎉 Lead ${phone} completed all BotFlow questions! Interest: ${interest.toUpperCase()}`);
-                    const completionMsg = `Thanks! We've noted your preferences — our property advisory team will connect with you shortly.\n\nIn the meantime, feel free to ask any questions about *${project?.name || 'our properties'}* (pricing, exact location, site visits, or brochure) — I'm right here to help! 🏡`;
+                    const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+                    const completionMsg = (lang === 'english')
+                        ? `Thank you! We've noted your preferences. Our property advisory team at *Bhole Baba Investments* will connect with you shortly.\n\nIn the meantime, feel free to ask any questions about *${project?.name || 'our properties'}* (pricing, exact location, site visits, or brochure) — I'm right here to help! 🏡`
+                        : `Thanks! Humne aapki preference note kar li hai — *Bhole Baba Investments* ki team aapse connect karegi.\n\nIs dauran aap *${project?.name || 'hamari properties'}* ke baare mein kuch bhi pooch sakte hain (pricing, location, sample flat visit) — Main yahin hoon! 🏡`;
                     await (0, baileysService_1.sendText)(phone, completionMsg);
                     return;
                 }
-                // Advance to next step with buttons
+                // Advance to next step
                 const nextStep = steps[currentStepIndex + 1];
                 state.currentStep = nextStep.stepKey;
                 await state.save();
@@ -380,40 +377,9 @@ async function handleUserInteraction(phone, text, lead) {
                 await sendStepQuestion(phone, nextStep, false);
                 return;
             }
-            // --- Option NOT matched: User typed a question or gave custom input! ---
-            // "NOW: Jab user ne saare question/kuj input daali to uske hisaab se msg send ho ja une pucha h
-            //  or jab question bhi khtam ho jaaye to bhi user next questioning text ke through puch skta h"
-            console.log(`[Chatbot] 💡 User ${phone} asked a question during step "${currentStep.stepKey}": "${text}"`);
-            // Extract preferences if present in text (e.g. budget or timeline)
-            (0, aiLearningService_1.extractAndSaveLeadPreferences)(lead._id, text).catch(() => { });
-            // Show typing indicator
-            await (0, baileysService_1.sendTyping)(phone, 'composing');
-            try {
-                const contextNote = `The prospective buyer was asked the questionnaire question: "${currentStep.question}". Instead of tapping an option button, the buyer asked: "${text}". Answer their specific question directly, politely, and accurately using the property database facts.`;
-                const aiResult = await (0, aiChatService_1.generateReply)(phone, text, lead, project?._id, contextNote);
-                await (0, baileysService_1.sendTyping)(phone, 'paused');
-                if (aiResult.reply && aiResult.reply.trim()) {
-                    await (0, baileysService_1.sendText)(phone, aiResult.reply.trim());
-                }
-                if (aiResult.needsAgent) {
-                    return;
-                }
-                // After answering their query, present buttons only if AI didn't already ask a natural follow-up question
-                if (!aiResult.reply.includes('?')) {
-                    await new Promise(r => setTimeout(r, 1200));
-                    await sendStepQuestion(phone, currentStep, false);
-                }
-            }
-            catch (err) {
-                console.error('[Chatbot] ❌ Error answering question with LLM:', err?.message || err);
-                await (0, baileysService_1.sendTyping)(phone, 'paused');
-                await sendStepQuestion(phone, currentStep, false);
-            }
-            return;
         }
         // ─────────────────────────────────────────────────────────────
-        // CASE B: BotFlow is completed or free-text inquiry
-        // "or jab question bhi khtam ho jaaye to bhi user next questioning text ke through puch skta h"
+        // NATURAL CONVERSATIONAL AI MODE (NO REPEATING QUESTIONS OR BUTTONS)
         // ─────────────────────────────────────────────────────────────
         if (!state) {
             state = await conversationState_model_1.default.create({
@@ -426,6 +392,11 @@ async function handleUserInteraction(phone, text, lead) {
                 startedAt: new Date(),
                 lastActiveAt: new Date(),
             });
+        }
+        else if (state.currentStep !== 'completed') {
+            state.currentStep = 'completed';
+            state.lastActiveAt = new Date();
+            await state.save();
         }
         const activeLLM = (0, llmService_1.getActiveLLMClient)();
         console.log(`[Chatbot] 🤖 ${activeLLM.provider.toUpperCase()} (${activeLLM.model}) processing query from ${phone}: "${text}"`);
@@ -441,9 +412,9 @@ async function handleUserInteraction(phone, text, lead) {
         catch (err) {
             console.error('[Chatbot] ❌ Error generating LLM reply:', err?.message || err);
             await (0, baileysService_1.sendTyping)(phone, 'paused');
-            const directFallback = project ? (0, projectKnowledgeService_1.findDirectFaqAnswer)(project, text) : null;
-            await (0, baileysService_1.sendText)(phone, directFallback ||
-                `Regarding *${project?.name || 'our property'}*: Hamare paas prime options available hain starting @ ${project?.priceRange || 'best market rates'}. Kya aap location, pricing ya sample flat visit ke baare mein jaanna chahenge? 🏡`);
+            const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+            const smartFallback = (0, projectKnowledgeService_1.buildIntelligentRealEstateResponse)(project, text, lang, activeProjects);
+            await (0, baileysService_1.sendText)(phone, smartFallback);
         }
     }
     catch (err) {
@@ -514,15 +485,12 @@ function registerChatbot() {
                 const existingConv = await conversationState_model_1.default.findOne({
                     $or: [{ phone: targetPhone }, { leadId: lead._id }],
                 }).sort({ updatedAt: -1 });
-                // If lead was already active in last 15 minutes, do not interrupt
-                if (existingConv && (existingConv.attemptCount > 0 || (existingConv.answers && existingConv.answers.length > 0))) {
-                    const minutesSinceLastActive = (Date.now() - new Date(existingConv.lastActiveAt).getTime()) / (1000 * 60);
-                    if (minutesSinceLastActive < 15) {
-                        console.log(`[Chatbot] ℹ️ Lead ${targetPhone} is actively in conversation. Not interrupting with read trigger.`);
-                        return;
-                    }
+                // If lead has ever engaged in conversation, do NOT trigger duplicate welcome messages!
+                if (existingConv && (existingConv.attemptCount > 0 || (existingConv.answers && existingConv.answers.length > 0) || existingConv.currentStep === 'completed')) {
+                    console.log(`[Chatbot] ℹ️ Lead ${targetPhone} has already engaged in conversation. Skipping duplicate read trigger.`);
+                    return;
                 }
-                console.log(`[Chatbot] 🕒 Lead ${targetPhone} READ campaign message. Triggering first question with buttons in ${READ_TRIGGER_DELAY_MS}ms...`);
+                console.log(`[Chatbot] 🕒 Lead ${targetPhone} READ campaign message. Triggering first welcome in ${READ_TRIGGER_DELAY_MS}ms...`);
                 setTimeout(async () => {
                     await sendReadWelcomeWithButtons(targetPhone, lead);
                 }, READ_TRIGGER_DELAY_MS);
@@ -561,16 +529,17 @@ function registerChatbot() {
                     updatedAt: new Date(),
                 },
             });
-            // Also ensure ConversationState attemptCount is at least 1 so filters and stats stay synced
+            // Ensure ConversationState is in free conversational mode (currentStep: 'completed')
             await conversationState_model_1.default.findOneAndUpdate({ $or: [{ phone: normPhone }, { leadId: lead._id }] }, {
                 $set: {
                     deliveryStatus: 'replied',
                     lastMessageFromUser: text,
                     lastMessageAt: new Date(),
                     lastActiveAt: new Date(),
+                    currentStep: 'completed',
                 },
                 $inc: { attemptCount: 1 },
-                $setOnInsert: { startedAt: new Date(), currentStep: 'completed' },
+                $setOnInsert: { startedAt: new Date() },
             }, { upsert: true, new: true }).catch(() => { });
             // ── Per-Phone 3-Second Debounce Protection ──
             if (processingPhones.has(normPhone)) {
