@@ -15,15 +15,29 @@ import {
   setFirstMessage,
   deleteFirstMessage,
   testAiQuery,
+  getGeminiPoolStatus,
+  getTrainingLogs,
+  exportTrainingLogsJsonl,
+  getSharesampattiSyncData,
+  triggerSharesampattiSync,
+  getSharesampattiSyncStatsController,
 } from '../controllers/aiChat.controller';
 
 const router = Router();
 
-// Health, Messages, and Test Diagnostic
+// Health, Gemini Key Pool, Messages, and Test Diagnostic
 router.get('/health', adminAuth, getAiHealth);
+router.get('/gemini-pool', adminAuth, getGeminiPoolStatus);
 router.post('/test-query', adminAuth, testAiQuery);
 router.get('/messages/:leadId', adminAuth, getLeadMessages);
 router.patch('/resume/:leadId', adminAuth, resumeLeadAi);
+
+// Automated Training Dataset & Fine-Tuning Sync (for llm.sharesampatti.com)
+router.get('/training-logs', adminAuth, getTrainingLogs);
+router.get('/training-logs/export-jsonl', adminAuth, exportTrainingLogsJsonl);
+router.get('/sharesampatti-sync', adminAuth, getSharesampattiSyncData);
+router.post('/sharesampatti-sync/trigger', adminAuth, triggerSharesampattiSync);
+router.get('/sharesampatti-sync/stats', adminAuth, getSharesampattiSyncStatsController);
 
 // Training and FAQs insertion/management
 router.get('/training-data', adminAuth, getTrainingData);

@@ -50,12 +50,19 @@ exports.listLearnedQuestions = listLearnedQuestions;
 exports.approveQuestion = approveQuestion;
 exports.rejectQuestion = rejectQuestion;
 exports.testAiQuery = testAiQuery;
+exports.getGeminiPoolStatus = getGeminiPoolStatus;
+exports.getTrainingLogs = getTrainingLogs;
+exports.exportTrainingLogsJsonl = exportTrainingLogsJsonl;
+exports.getSharesampattiSyncData = getSharesampattiSyncData;
+exports.triggerSharesampattiSync = triggerSharesampattiSync;
+exports.getSharesampattiSyncStatsController = getSharesampattiSyncStatsController;
 const llmService_1 = require("../services/llmService");
 const conversationMessage_model_1 = __importDefault(require("../models/conversationMessage.model"));
 const conversationState_model_1 = __importDefault(require("../models/conversationState.model"));
 const learnedQuestion_model_1 = __importDefault(require("../models/learnedQuestion.model"));
 const project_model_1 = __importDefault(require("../models/project.model"));
 const botFlow_model_1 = __importDefault(require("../models/botFlow.model"));
+const llmTrainingLog_model_1 = __importDefault(require("../models/llmTrainingLog.model"));
 const aiLearningService_1 = require("../services/aiLearningService");
 // GET /api/ai-chat/health - Check active LLM provider and queue status
 async function getAiHealth(_req, res) {
@@ -434,6 +441,129 @@ async function testAiQuery(req, res) {
     }
     catch (err) {
         res.status(500).json({ success: false, error: err.message || 'Error testing AI query' });
+    }
+}
+// GET /api/ai-chat/gemini-pool - Live status and chat counts of all Gemini keys
+async function getGeminiPoolStatus(_req, res) {
+    try {
+        const stats = (0, llmService_1.getGeminiPoolStats)();
+        res.json({ success: true, stats });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Failed to fetch Gemini pool status' });
+    }
+}
+// GET /api/ai-chat/training-logs - Get all logged conversation pairs for LLM training
+async function getTrainingLogs(req, res) {
+    try {
+        const page = parseInt(req.query.page || '1', 10);
+        const limit = parseInt(req.query.limit || '50', 10);
+        const language = req.query.language;
+        const intent = req.query.intent;
+        const projectId = req.query.projectId;
+        const query = {};
+        if (language)
+            query.language = language;
+        if (intent)
+            query.detectedIntent = intent;
+        if (projectId)
+            query.projectId = projectId;
+        const [logs, total] = await Promise.all([
+            llmTrainingLog_model_1.default.find(query)
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .lean(),
+            llmTrainingLog_model_1.default.countDocuments(query),
+        ]);
+        res.json({
+            success: true,
+            logs,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Failed to fetch training logs' });
+    }
+}
+// GET /api/ai-chat/training-logs/export-jsonl - Export conversation pairs in fine-tuning JSONL format
+async function exportTrainingLogsJsonl(req, res) {
+    try {
+        const query = {};
+        if (req.query.language)
+            query.language = req.query.language;
+        if (req.query.projectId)
+            query.projectId = req.query.projectId;
+        const logs = await llmTrainingLog_model_1.default.find(query).sort({ createdAt: -1 }).lean();
+        const jsonlLines = logs.map(log => {
+            const entry = {
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are the AI Property Consultant for Bhole Baba Investments Real Estate. Project: ${log.projectName || 'General'}. Respond accurately in ${log.language}.`,
+                    },
+                    { role: 'user', content: log.userMessage },
+                    { role: 'assistant', content: log.aiResponse },
+                ],
+                metadata: {
+                    intent: log.detectedIntent,
+                    language: log.language,
+                    createdAt: log.createdAt,
+                },
+            };
+            return JSON.stringify(entry);
+        });
+        const fileContent = jsonlLines.join('\n');
+        res.setHeader('Content-Type', 'application/x-jsonlines');
+        res.setHeader('Content-Disposition', 'attachment; filename="sharesampatti_training_dataset.jsonl"');
+        res.send(fileContent);
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Failed to export training dataset' });
+    }
+}
+// GET /api/ai-chat/sharesampatti-sync - Directly pulls training dataset for llm.sharesampatti.com
+async function getSharesampattiSyncData(req, res) {
+    try {
+        const onlyUnsynced = req.query.onlyUnsynced === 'true';
+        const { buildTrainingDataset } = await Promise.resolve().then(() => __importStar(require('../services/automatedLlmTrainingService')));
+        const dataset = await buildTrainingDataset(onlyUnsynced);
+        res.json({
+            success: true,
+            totalRecords: dataset.records.length,
+            conversationCount: dataset.conversationCount,
+            records: dataset.records,
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Failed to fetch sharesampatti sync data' });
+    }
+}
+// POST /api/ai-chat/sharesampatti-sync/trigger - Immediately triggers auto-sync to llm.sharesampatti.com
+async function triggerSharesampattiSync(_req, res) {
+    try {
+        const { syncTrainingToSharesampatti } = await Promise.resolve().then(() => __importStar(require('../services/automatedLlmTrainingService')));
+        const result = await syncTrainingToSharesampatti();
+        res.json(result);
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Failed to trigger sharesampatti sync' });
+    }
+}
+// GET /api/ai-chat/sharesampatti-sync/stats - Returns live sync status and online health
+async function getSharesampattiSyncStatsController(_req, res) {
+    try {
+        const { getSharesampattiSyncStats } = await Promise.resolve().then(() => __importStar(require('../services/automatedLlmTrainingService')));
+        const stats = await getSharesampattiSyncStats();
+        res.json({ success: true, stats });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message || 'Failed to get sync stats' });
     }
 }
 //# sourceMappingURL=aiChat.controller.js.map

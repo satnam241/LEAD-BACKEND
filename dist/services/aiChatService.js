@@ -321,20 +321,28 @@ async function buildMessages(leadId, projectId, currentMessage, contextNote) {
             .join(', ')
         : '';
     const systemPrompt = `You are an elite, consultative Senior Real Estate Property Advisor assisting prospective home buyers on WhatsApp.
-You represent our real estate advisory firm. You possess deep property sales intelligence, emotional EQ, and sharp consultative selling skills. You strictly ground all factual details (pricing, location, configurations, possession, RERA) in the database information provided below.
+You proudly represent our real estate firm "Bhole Baba Investments". You possess deep property sales intelligence, emotional EQ, and sharp consultative selling skills. You strictly ground all factual details (pricing, location, configurations, possession, RERA) in the database information provided below.
 
 ════════════════════════════════════════════════════════════════════════════════
 🌐 CURRENT USER INQUIRY LANGUAGE DETECTED: [ ${detectedLang.toUpperCase()} ]
 ════════════════════════════════════════════════════════════════════════════════
-MANDATORY LANGUAGE MIRRORING RULE (HIGHEST PRIORITY):
-- FIRST MESSAGE & INITIAL GREETING RULE (ABSOLUTE REQUIREMENT):
-  * When sending the FIRST message, welcome greeting, or responding to an initial greeting ("hi", "hello", "hello sir", "hey"), your response MUST ALWAYS BE IN 100% POLISHED, PROFESSIONAL ENGLISH!
-  * Example: "Hello! 👋 Welcome to *${leadDoc?.fullName ? `*` : ''}${formName}*. Thank you for inquiring! How can I assist you today? Feel free to ask about pricing, location, plot sizes, or schedule a site visit."
-- SUBSEQUENT CONVERSATION LANGUAGE MIRRORING:
-  * If the buyer asks specific property questions in HINGLISH: Respond in natural, polite Hinglish.
-  * If the buyer asks specific property questions in PURE DEVANAGARI HINDI: Respond in pure Devanagari Hindi.
-  * If the buyer asks in ENGLISH: Respond in English.
-  * CURRENT DETECTED MODE: [ ${detectedLang.toUpperCase()} ]
+MANDATORY LANGUAGE CONSTRAINTS (STRICT & ABSOLUTE ENFORCEMENT):
+${detectedLang === 'english'
+        ? `🚨 STRICT ENGLISH MODE ACTIVATED (ZERO HINDI/HINGLISH TOLERANCE):
+- The prospective buyer messaged in ENGLISH.
+- You MUST generate your ENTIRE reply in 100% FLUENT, GRAMMATICAL, PROFESSIONAL ENGLISH ONLY!
+- ABSOLUTELY FORBIDDEN: Do NOT include ANY Hindi or Hinglish words (such as "kya", "hai", "hain", "aap", "ji", "bhai", "shukriya", "batao", "sir ji").
+- Every single sentence must be pure, clean, natural English.`
+        : detectedLang === 'hindi'
+            ? `🚨 STRICT HINDI DEVANAGARI MODE:
+- The prospective buyer messaged in PURE HINDI (Devanagari script).
+- You MUST generate your response in respectful, clear Devanagari Hindi.`
+            : `🚨 HINGLISH MODE:
+- The prospective buyer messaged in HINGLISH (Roman Hindi).
+- Respond in warm, respectful, consultative Hinglish.`}
+- FIRM NAME: Always introduce or refer to our firm as "Bhole Baba Investments".
+- FIRST GREETING: The first welcome greeting must ALWAYS be in 100% polished English.
+- CURRENT DETECTED MODE: [ ${detectedLang.toUpperCase()} ]
 
 ════════════════════════════════════════════════════════════════════════════════
 PROSPECTIVE BUYER INQUIRY SOURCE & CONTEXT:
@@ -699,7 +707,98 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
         }).catch(() => { });
         return { reply: handoffReply, needsAgent: true, aiPaused: true };
     }
-    // 4. Check trained FAQs, keywords, and core project knowledge directly
+    const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+    // ─────────────────────────────────────────────────────────────
+    // 5. 🎯 PROJECT SELECTION MATCHING (e.g. user typed "1", "2", or project name)
+    // ─────────────────────────────────────────────────────────────
+    const activeProjects = await project_model_1.default.find({ isActive: true }).lean();
+    const selectedProj = (0, projectKnowledgeService_1.matchProjectFromSelection)(text, activeProjects);
+    if (selectedProj && activeProjects.length > 1) {
+        console.log(`[AI Chat] 🎯 User selected project: "${selectedProj.name}" from text: "${text}"`);
+        const projectReply = (0, projectKnowledgeService_1.formatSingleProjectDetails)(selectedProj, lang);
+        await conversationMessage_model_1.default.create([
+            { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+            { leadId: lead._id, phone, role: 'assistant', content: projectReply, createdAt: new Date() },
+        ]);
+        await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+            $set: {
+                lastMessageFromUser: text,
+                lastMessageAt: new Date(),
+                lastActiveAt: new Date(),
+                activeProjectId: selectedProj._id,
+            },
+            $inc: { attemptCount: 1 },
+        }, { upsert: true, new: true });
+        await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+        (0, aiLearningService_1.logConversationForTraining)({
+            leadId: lead._id,
+            phone,
+            language: lang,
+            detectedIntent: 'project_selection',
+            projectId: selectedProj._id,
+            projectName: selectedProj.name,
+            userMessage: text,
+            aiResponse: projectReply,
+            source: 'whatsapp',
+        }).catch(() => { });
+        return { reply: projectReply, needsAgent: false, aiPaused: false };
+    }
+    // ─────────────────────────────────────────────────────────────
+    // 6. 🏡 PROPERTY DETAILS INQUIRY (Single vs Multiple Projects Routing)
+    // ─────────────────────────────────────────────────────────────
+    if ((0, projectKnowledgeService_1.isPropertyDetailsQuery)(text)) {
+        let detailsReply = '';
+        let targetProject = projectDoc;
+        if (activeProjects.length <= 1) {
+            // Single project in DB -> Directly return that project's complete details
+            const singleProj = activeProjects[0] || projectDoc;
+            if (singleProj) {
+                detailsReply = (0, projectKnowledgeService_1.formatSingleProjectDetails)(singleProj, lang);
+                targetProject = singleProj;
+            }
+        }
+        else {
+            // Multiple projects in DB:
+            // If user asks "what projects do you have" or "options" or has not selected a project yet:
+            const askingPortfolio = /all\s*projects|kya\s*(kya)?\s*project|options|list|kaun\s*se\s*project|konsa\s*project|what\s*projects|which\s*projects/i.test(text);
+            if (askingPortfolio || !projectDoc) {
+                detailsReply = (0, projectKnowledgeService_1.formatMultiProjectList)(activeProjects, lang);
+            }
+            else {
+                // User already has an active project: Give that project's full details!
+                detailsReply = (0, projectKnowledgeService_1.formatSingleProjectDetails)(projectDoc, lang);
+            }
+        }
+        if (detailsReply) {
+            await conversationMessage_model_1.default.create([
+                { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                { leadId: lead._id, phone, role: 'assistant', content: detailsReply, createdAt: new Date() },
+            ]);
+            await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+                $set: {
+                    lastMessageFromUser: text,
+                    lastMessageAt: new Date(),
+                    lastActiveAt: new Date(),
+                    activeProjectId: targetProject?._id || projectId,
+                },
+                $inc: { attemptCount: 1 },
+            }, { upsert: true, new: true });
+            await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+            (0, aiLearningService_1.logConversationForTraining)({
+                leadId: lead._id,
+                phone,
+                language: lang,
+                detectedIntent: 'property_details',
+                projectId: targetProject?._id || projectId,
+                projectName: targetProject?.name || 'Bhole Baba Investments',
+                userMessage: text,
+                aiResponse: detailsReply,
+                source: 'whatsapp',
+            }).catch(() => { });
+            return { reply: detailsReply, needsAgent: false, aiPaused: false };
+        }
+    }
+    // 7. Check trained FAQs, keywords, and core project knowledge directly
     let directAnswer = null;
     if (projectDoc) {
         directAnswer = (0, projectKnowledgeService_1.findDirectFaqAnswer)(projectDoc, text);
@@ -738,9 +837,20 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
             $inc: { attemptCount: 1 },
         }, { upsert: true, new: true });
         await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+        (0, aiLearningService_1.logConversationForTraining)({
+            leadId: lead._id,
+            phone,
+            language: lang,
+            detectedIntent: 'direct_knowledge_or_persona',
+            projectId,
+            projectName: projectDoc?.name || 'Bhole Baba Investments',
+            userMessage: text,
+            aiResponse: cleanAnswer,
+            source: 'whatsapp',
+        }).catch(() => { });
         return { reply: cleanAnswer, needsAgent: false, aiPaused: false };
     }
-    // 5. 🎯 CROSS-SELLING BUDGET ENGINE
+    // 8. 🎯 CROSS-SELLING BUDGET ENGINE
     // If user mentions a specific budget lower than current project or asks for cheaper options
     let crossSellNote = '';
     const statedBudget = currentLead.whatIsYourBudget || text;
@@ -753,7 +863,9 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
     }
     // Define smart fallback so user NEVER gets an empty or raw dumped copy-paste message
     const smartFallback = directAnswer ||
-        `Main aapki baat samajh gaya regarding *${projectDoc?.name || 'our property'}*! Hamare paas yahan prime options available hain starting @ ${projectDoc?.priceRange || 'best market rates'}. Kya aap location, plot sizes ya is weekend par site visit ke baare mein jaanna chahte hain? 🏡`;
+        (lang === 'english'
+            ? `I understand your interest regarding *${projectDoc?.name || 'our properties at Bhole Baba Investments'}*! We have prime options available starting @ ${projectDoc?.priceRange || 'best market rates'}. Would you like to check the location, plot sizes, or schedule a site visit this weekend? 🏡`
+            : `Main aapki baat samajh gaya regarding *${projectDoc?.name || 'Bhole Baba Investments properties'}*! Hamare paas yahan prime options available hain starting @ ${projectDoc?.priceRange || 'best market rates'}. Kya aap location, plot sizes ya is weekend par site visit ke baare mein jaanna chahte hain? 🏡`);
     // 6. Build system and conversation messages with dynamic facts, portfolio, and guardrails
     let effectiveContextNote = directAnswer
         ? `${contextNote ? `${contextNote}\n` : ''}VERIFIED DATABASE FACT FOR THIS QUERY: "${directAnswer}". Convey this answer directly, concisely, and accurately.`
@@ -786,6 +898,18 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
     }, { upsert: true, new: true });
     // 🔥 Anyone actively querying/chatting on WhatsApp is an engaged HOT lead!
     await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+    // 📝 Continuously log high-quality conversational training pair for llm.sharesampatti.com
+    (0, aiLearningService_1.logConversationForTraining)({
+        leadId: lead._id,
+        phone,
+        language: lang,
+        detectedIntent: 'general_ai_dialogue',
+        projectId,
+        projectName: projectDoc?.name || 'Bhole Baba Investments',
+        userMessage: text,
+        aiResponse: reply,
+        source: 'whatsapp',
+    }).catch(() => { });
     // 7. Auto-learning: if AI deferred to human team or was asked an unhandled question, record it
     const lowerReply = reply.toLowerCase();
     const isDeferred = lowerReply.includes('team') ||

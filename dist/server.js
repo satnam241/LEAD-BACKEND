@@ -32,6 +32,7 @@ const fbForm_routes_1 = __importDefault(require("./routes/fbForm.routes"));
 const aiChat_routes_1 = __importDefault(require("./routes/aiChat.routes"));
 const admin_controller_1 = require("./controllers/admin.controller");
 const adminAuth_1 = require("./middleware/adminAuth");
+const automatedLlmTrainingService_1 = require("./services/automatedLlmTrainingService");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const app = (0, express_1.default)();
@@ -91,6 +92,7 @@ const startServer = async () => {
     (0, chatbotService_1.registerChatbot)();
     (0, baileysService_1.startWhatsApp)();
     (0, followupNotifier_1.startFollowupNotifier)();
+    (0, automatedLlmTrainingService_1.startAutomatedTrainingScheduler)();
     const PORT = process.env.PORT || 4520;
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);

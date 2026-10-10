@@ -30,6 +30,7 @@ import fbFormRoutes from './routes/fbForm.routes';
 import aiChatRoutes from './routes/aiChat.routes';
 import { getNotifications } from "./controllers/admin.controller";
 import { adminAuth } from "./middleware/adminAuth";
+import { startAutomatedTrainingScheduler } from './services/automatedLlmTrainingService';
 
 import path from "path";
 import fs from "fs";
@@ -100,6 +101,7 @@ console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REF
   startWhatsApp();
 
 startFollowupNotifier();
+startAutomatedTrainingScheduler();
   const PORT = process.env.PORT || 4520;
 
   app.listen(PORT, () => {

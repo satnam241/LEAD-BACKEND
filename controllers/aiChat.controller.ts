@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
-import { isLLMUp, getLLMQueueLength, LLM_MODEL, LLM_BASE_URL, getActiveLLMClient } from '../services/llmService';
+import { isLLMUp, getLLMQueueLength, LLM_MODEL, LLM_BASE_URL, getActiveLLMClient, getGeminiPoolStats } from '../services/llmService';
 import ConversationMessage from '../models/conversationMessage.model';
 import ConversationState from '../models/conversationState.model';
 import LearnedQuestion from '../models/learnedQuestion.model';
 import Project from '../models/project.model';
 import BotFlow from '../models/botFlow.model';
+import LLMTrainingLog from '../models/llmTrainingLog.model';
 import { approveLearnedQuestion, rejectLearnedQuestion, normalizeQuery } from '../services/aiLearningService';
 
 // GET /api/ai-chat/health - Check active LLM provider and queue status
@@ -441,3 +442,129 @@ export async function testAiQuery(req: Request, res: Response): Promise<void> {
     res.status(500).json({ success: false, error: err.message || 'Error testing AI query' });
   }
 }
+
+// GET /api/ai-chat/gemini-pool - Live status and chat counts of all Gemini keys
+export async function getGeminiPoolStatus(_req: Request, res: Response): Promise<void> {
+  try {
+    const stats = getGeminiPoolStats();
+    res.json({ success: true, stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch Gemini pool status' });
+  }
+}
+
+// GET /api/ai-chat/training-logs - Get all logged conversation pairs for LLM training
+export async function getTrainingLogs(req: Request, res: Response): Promise<void> {
+  try {
+    const page = parseInt((req.query.page as string) || '1', 10);
+    const limit = parseInt((req.query.limit as string) || '50', 10);
+    const language = req.query.language as string;
+    const intent = req.query.intent as string;
+    const projectId = req.query.projectId as string;
+
+    const query: any = {};
+    if (language) query.language = language;
+    if (intent) query.detectedIntent = intent;
+    if (projectId) query.projectId = projectId;
+
+    const [logs, total] = await Promise.all([
+      LLMTrainingLog.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      LLMTrainingLog.countDocuments(query),
+    ]);
+
+    res.json({
+      success: true,
+      logs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch training logs' });
+  }
+}
+
+// GET /api/ai-chat/training-logs/export-jsonl - Export conversation pairs in fine-tuning JSONL format
+export async function exportTrainingLogsJsonl(req: Request, res: Response): Promise<void> {
+  try {
+    const query: any = {};
+    if (req.query.language) query.language = req.query.language;
+    if (req.query.projectId) query.projectId = req.query.projectId;
+
+    const logs = await LLMTrainingLog.find(query).sort({ createdAt: -1 }).lean();
+
+    const jsonlLines = logs.map(log => {
+      const entry = {
+        messages: [
+          {
+            role: 'system',
+            content: `You are the AI Property Consultant for Bhole Baba Investments Real Estate. Project: ${log.projectName || 'General'}. Respond accurately in ${log.language}.`,
+          },
+          { role: 'user', content: log.userMessage },
+          { role: 'assistant', content: log.aiResponse },
+        ],
+        metadata: {
+          intent: log.detectedIntent,
+          language: log.language,
+          createdAt: log.createdAt,
+        },
+      };
+      return JSON.stringify(entry);
+    });
+
+    const fileContent = jsonlLines.join('\n');
+    res.setHeader('Content-Type', 'application/x-jsonlines');
+    res.setHeader('Content-Disposition', 'attachment; filename="sharesampatti_training_dataset.jsonl"');
+    res.send(fileContent);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to export training dataset' });
+  }
+}
+
+// GET /api/ai-chat/sharesampatti-sync - Directly pulls training dataset for llm.sharesampatti.com
+export async function getSharesampattiSyncData(req: Request, res: Response): Promise<void> {
+  try {
+    const onlyUnsynced = req.query.onlyUnsynced === 'true';
+    const { buildTrainingDataset } = await import('../services/automatedLlmTrainingService');
+    const dataset = await buildTrainingDataset(onlyUnsynced);
+    res.json({
+      success: true,
+      totalRecords: dataset.records.length,
+      conversationCount: dataset.conversationCount,
+      records: dataset.records,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch sharesampatti sync data' });
+  }
+}
+
+// POST /api/ai-chat/sharesampatti-sync/trigger - Immediately triggers auto-sync to llm.sharesampatti.com
+export async function triggerSharesampattiSync(_req: Request, res: Response): Promise<void> {
+  try {
+    const { syncTrainingToSharesampatti } = await import('../services/automatedLlmTrainingService');
+    const result = await syncTrainingToSharesampatti();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to trigger sharesampatti sync' });
+  }
+}
+
+// GET /api/ai-chat/sharesampatti-sync/stats - Returns live sync status and online health
+export async function getSharesampattiSyncStatsController(_req: Request, res: Response): Promise<void> {
+  try {
+    const { getSharesampattiSyncStats } = await import('../services/automatedLlmTrainingService');
+    const stats = await getSharesampattiSyncStats();
+    res.json({ success: true, stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to get sync stats' });
+  }
+}
+
+

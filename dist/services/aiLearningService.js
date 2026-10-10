@@ -9,9 +9,11 @@ exports.learnFromAgentReply = learnFromAgentReply;
 exports.approveLearnedQuestion = approveLearnedQuestion;
 exports.rejectLearnedQuestion = rejectLearnedQuestion;
 exports.extractAndSaveLeadPreferences = extractAndSaveLeadPreferences;
+exports.logConversationForTraining = logConversationForTraining;
 const learnedQuestion_model_1 = __importDefault(require("../models/learnedQuestion.model"));
 const project_model_1 = __importDefault(require("../models/project.model"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
+const llmTrainingLog_model_1 = __importDefault(require("../models/llmTrainingLog.model"));
 function normalizeQuery(q) {
     if (!q)
         return '';
@@ -276,6 +278,36 @@ async function extractAndSaveLeadPreferences(leadId, text) {
     catch (err) {
         console.error('[Buyer Profiling] Error extracting lead preferences:', err?.message || err);
         return {};
+    }
+}
+/**
+ * Persists high-quality conversation pairs for continuous fine-tuning
+ * of custom open-source model at llm.sharesampatti.com
+ */
+async function logConversationForTraining(data) {
+    try {
+        if (!data.userMessage || !data.aiResponse)
+            return;
+        const cleanUser = data.userMessage.trim();
+        const cleanAi = data.aiResponse.trim();
+        if (cleanUser.length < 2 || cleanAi.length < 5)
+            return;
+        await llmTrainingLog_model_1.default.create({
+            leadId: data.leadId,
+            phone: data.phone,
+            language: data.language,
+            detectedIntent: data.detectedIntent || 'general_query',
+            projectId: data.projectId,
+            projectName: data.projectName,
+            userMessage: cleanUser,
+            aiResponse: cleanAi,
+            source: data.source || 'whatsapp',
+            qualityScore: data.qualityScore || 5,
+        });
+        console.log(`[LLM Training Log] 📝 Logged training pair for "${data.projectName || 'General'}" (${data.language})`);
+    }
+    catch (err) {
+        console.warn('[LLM Training Log] Non-fatal logging error:', err?.message || err);
     }
 }
 //# sourceMappingURL=aiLearningService.js.map

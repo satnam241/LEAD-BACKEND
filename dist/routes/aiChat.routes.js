@@ -4,11 +4,18 @@ const express_1 = require("express");
 const adminAuth_1 = require("../middleware/adminAuth");
 const aiChat_controller_1 = require("../controllers/aiChat.controller");
 const router = (0, express_1.Router)();
-// Health, Messages, and Test Diagnostic
+// Health, Gemini Key Pool, Messages, and Test Diagnostic
 router.get('/health', adminAuth_1.adminAuth, aiChat_controller_1.getAiHealth);
+router.get('/gemini-pool', adminAuth_1.adminAuth, aiChat_controller_1.getGeminiPoolStatus);
 router.post('/test-query', adminAuth_1.adminAuth, aiChat_controller_1.testAiQuery);
 router.get('/messages/:leadId', adminAuth_1.adminAuth, aiChat_controller_1.getLeadMessages);
 router.patch('/resume/:leadId', adminAuth_1.adminAuth, aiChat_controller_1.resumeLeadAi);
+// Automated Training Dataset & Fine-Tuning Sync (for llm.sharesampatti.com)
+router.get('/training-logs', adminAuth_1.adminAuth, aiChat_controller_1.getTrainingLogs);
+router.get('/training-logs/export-jsonl', adminAuth_1.adminAuth, aiChat_controller_1.exportTrainingLogsJsonl);
+router.get('/sharesampatti-sync', adminAuth_1.adminAuth, aiChat_controller_1.getSharesampattiSyncData);
+router.post('/sharesampatti-sync/trigger', adminAuth_1.adminAuth, aiChat_controller_1.triggerSharesampattiSync);
+router.get('/sharesampatti-sync/stats', adminAuth_1.adminAuth, aiChat_controller_1.getSharesampattiSyncStatsController);
 // Training and FAQs insertion/management
 router.get('/training-data', adminAuth_1.adminAuth, aiChat_controller_1.getTrainingData);
 router.post('/train', adminAuth_1.adminAuth, aiChat_controller_1.insertTrainingData);

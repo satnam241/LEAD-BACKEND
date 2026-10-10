@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose';
 import LearnedQuestion from '../models/learnedQuestion.model';
 import Project from '../models/project.model';
 import Lead from '../models/lead.model';
+import LLMTrainingLog from '../models/llmTrainingLog.model';
 
 export function normalizeQuery(q: string): string {
   if (!q) return '';
@@ -282,3 +283,44 @@ export async function extractAndSaveLeadPreferences(leadId: Types.ObjectId, text
     return {};
   }
 }
+
+/**
+ * Persists high-quality conversation pairs for continuous fine-tuning
+ * of custom open-source model at llm.sharesampatti.com
+ */
+export async function logConversationForTraining(data: {
+  leadId?: Types.ObjectId;
+  phone?: string;
+  language: 'english' | 'hindi' | 'hinglish';
+  detectedIntent?: string;
+  projectId?: Types.ObjectId;
+  projectName?: string;
+  userMessage: string;
+  aiResponse: string;
+  source?: 'whatsapp' | 'manual_agent' | 'web';
+  qualityScore?: number;
+}): Promise<void> {
+  try {
+    if (!data.userMessage || !data.aiResponse) return;
+    const cleanUser = data.userMessage.trim();
+    const cleanAi = data.aiResponse.trim();
+    if (cleanUser.length < 2 || cleanAi.length < 5) return;
+
+    await LLMTrainingLog.create({
+      leadId: data.leadId,
+      phone: data.phone,
+      language: data.language,
+      detectedIntent: data.detectedIntent || 'general_query',
+      projectId: data.projectId,
+      projectName: data.projectName,
+      userMessage: cleanUser,
+      aiResponse: cleanAi,
+      source: data.source || 'whatsapp',
+      qualityScore: data.qualityScore || 5,
+    });
+    console.log(`[LLM Training Log] 📝 Logged training pair for "${data.projectName || 'General'}" (${data.language})`);
+  } catch (err: any) {
+    console.warn('[LLM Training Log] Non-fatal logging error:', err?.message || err);
+  }
+}
+

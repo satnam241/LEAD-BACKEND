@@ -159,54 +159,54 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
     return null;
   }
 
-  if (/(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are|आप कौन|तुम कौन|क्या नाम|कौन हो|कौन हैं)/i.test(rawLower)) {
+  if (/(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are|aap kya ho|kya kaam hai|kya karte ho|आप कौन|तुम कौन|क्या नाम|कौन हो|कौन हैं)/i.test(rawLower)) {
     if (lang === 'english') {
-      return `I am your dedicated Property Consultant for *${project?.name || 'this property'}* 🏡 I am here to assist you with live pricing, plot layouts, location details, and scheduling site visits. What details would you like to explore?`;
+      return `I am the AI Property Consultant for *Bhole Baba Investments* Real Estate 🏡\n\nI am right here to help you with all the properties and projects in our portfolio! You can ask me anything about live pricing, prime locations, unit layouts, amenities, or schedule a site visit. Which property or detail would you like to explore?`;
     }
     if (lang === 'hindi') {
-      return `मैं *${project?.name || 'प्रॉपर्टी एडवाइजरी'}* का समर्पित प्रॉपर्टी कंसलटेंट हूँ 🏡 मैं आपको इस प्रोजेक्ट की लाइव कीमतें, लेआउट, लोकेशन और साइट विजिट अरेंज करने में मदद करूँगा। आप क्या जानकारी जानना चाहेंगे?`;
+      return `मैं *भोले बाबा इन्वेस्टमेंट्स* रियल एस्टेट का AI बॉट व प्रॉपर्टी कंसलटेंट हूँ 🏡\n\nहमारे पास जो भी प्रमुख प्रोजेक्ट्स हैं, उनके संबंध में सहायता करने के लिए मैं यहाँ उपस्थित हूँ! आप लाइव कीमतें, लोकेशन, यूनिट साइज, सुविधाएं या साइट विजिट बुक करने के बारे में बात कर सकते हैं। आप किस प्रोजेक्ट या प्रॉपर्टी के बारे में जानना चाहते हैं?`;
     }
-    return `Main *${project?.name || 'Property Advisory'}* ka dedicated Property Consultant hoon 🏡 Main aapko is project ki live pricing, plot layouts, location aur site visit arrange karne mein guide karta hoon. Aap is property mein kya explore karna chahenge?`;
+    return `Main *Bhole Baba Investments* Real Estate ka AI Bot & Property Consultant hoon 🏡\n\nHamare paas jo bhi prime properties aur projects hain, unke regarding main aapki poori madad karne ke liye yahan hoon! Aap live pricing, locations, unit sizes, layouts ya site visit ke baare mein baat kar sakte hain. Aap kaun se project ya property ke baare mein jaanna chahenge?`;
   }
 
   if (/(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho|how r u|कैसे हो|कैसा है|क्या हाल|सब ठीक)/i.test(rawLower)) {
     if (lang === 'english') {
-      return `I am doing great, thank you! 😊 Hope you are having a wonderful day. How may I assist you with *${project?.name || 'this property'}* today? Would you like to check pricing or unit sizes?`;
+      return `I am doing great, thank you! 😊 Hope you are having a wonderful day. How may I assist you with properties at *Bhole Baba Investments* today? Would you like to check pricing or unit sizes?`;
     }
     if (lang === 'hindi') {
-      return `मैं बिल्कुल कुशलपूर्वक हूँ, धन्यवाद! 😊 आशा है आप भी सपरिवार कुशल होंगे। मैं *${project?.name || 'इस प्रोजेक्ट'}* के संबंध में आपकी क्या सहायता कर सकता हूँ? क्या आप कीमत या प्लॉट साइज देखना चाहेंगे?`;
+      return `मैं बिल्कुल कुशलपूर्वक हूँ, धन्यवाद! 😊 आशा है आप भी सपरिवार कुशल होंगे। मैं *भोले बाबा इन्वेस्टमेंट्स* के प्रोजेक्ट्स के संबंध में आपकी क्या सहायता कर सकता हूँ? क्या आप कीमत या प्लॉट साइज देखना चाहेंगे?`;
     }
-    return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *${project?.name || 'is project'}* ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
+    return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *Bhole Baba Investments* ke projects ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
   }
 
   if (/(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today|मौसम|बारिश|गर्मी|ठंड|तापमान)/i.test(rawLower)) {
     if (lang === 'english') {
-      return `Haha, I cannot check the weather forecast as I'm the Real Estate Advisor for *${project?.name || 'this property'}*! 🌤️ But I can definitely guide you on plot pricing, connectivity, and scheduling a site visit. Would you like to explore location or unit sizes?`;
+      return `Haha, I cannot check the weather forecast as I'm the Real Estate Consultant for *Bhole Baba Investments*! 🌤️ But I can definitely guide you on property pricing, connectivity, and scheduling a site visit. Would you like to explore location or unit sizes?`;
     }
     if (lang === 'hindi') {
-      return `मौसम का हाल तो मैं नहीं बता सकता क्योंकि मैं *${project?.name || 'प्रॉपर्टी'}* का रियल एस्टेट एडवाइजर हूँ! 🌤️ लेकिन यहाँ प्लॉट्स की कीमत, लोकेशन और साइट विजिट के बारे में पूरी जानकारी दे सकता हूँ। क्या आप लोकेशन या प्लॉट साइज जानना चाहेंगे?`;
+      return `मौसम का हाल तो मैं नहीं बता सकता क्योंकि मैं *भोले बाबा इन्वेस्टमेंट्स* का रियल एस्टेट एडवाइजर हूँ! 🌤️ लेकिन यहाँ प्रॉपर्टी की कीमत, लोकेशन और साइट विजिट के बारे में पूरी जानकारी दे सकता हूँ। क्या आप लोकेशन या प्लॉट साइज जानना चाहेंगे?`;
     }
-    return `Haha, main weather forecast toh nahi bata sakta kyunki main *${project?.name || 'Property'}* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan plots ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
+    return `Haha, main weather forecast toh nahi bata sakta kyunki main *Bhole Baba Investments* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan properties ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
   }
 
   if (/(thanks|thank you|shukriya|dhanyawad|thx|धन्यवाद|शुक्रिया)/i.test(rawLower)) {
     if (lang === 'english') {
-      return `You're most welcome! 🤝 Feel free to let me know if you have any questions about *${project?.name || 'this property'}* or wish to plan a site visit.`;
+      return `You're most welcome! 🤝 Feel free to let me know if you have any questions about properties at *Bhole Baba Investments* or wish to plan a site visit.`;
     }
     if (lang === 'hindi') {
-      return `आपका बहुत-बहुत स्वागत है! 🤝 यदि *${project?.name || 'इस प्रॉपर्टी'}* के बारे में कोई अन्य सवाल हो या साइट विजिट प्लान करनी हो, तो अवश्य बताएं।`;
+      return `आपका बहुत-बहुत स्वागत है! 🤝 यदि *भोले बाबा इन्वेस्टमेंट्स* के प्रोजेक्ट्स के बारे में कोई अन्य सवाल हो या साइट विजिट प्लान करनी हो, तो अवश्य बताएं।`;
     }
-    return `Most welcome! 🤝 Agar *${project?.name || 'is property'}* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
+    return `Most welcome! 🤝 Agar *Bhole Baba Investments* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
   }
 
   if (/(joke|jokes|gana|song|movie|film|cricket|match|modi|politics|चुटकुला|गाना|फिल्म)/i.test(rawLower)) {
     if (lang === 'english') {
-      return `Haha, my entire focus is on helping you find your dream home at *${project?.name || 'our property'}*! 🏡 Shall we discuss pricing or schedule a site visit?`;
+      return `Haha, my entire focus is on helping you find your dream property with *Bhole Baba Investments*! 🏡 Shall we discuss pricing or schedule a site visit?`;
     }
     if (lang === 'hindi') {
-      return `हाँ, मेरा पूरा ध्यान तो आपको *${project?.name || 'हमारे प्रोजेक्ट'}* में बेहतरीन प्रॉपर्टी दिलाने पर है! 🏡 क्या हम कीमत या साइट विजिट के बारे में बात करें?`;
+      return `हाँ, मेरा पूरा ध्यान तो आपको *भोले बाबा इन्वेस्टमेंट्स* में बेहतरीन प्रॉपर्टी दिलाने पर है! 🏡 क्या हम कीमत या साइट विजिट के बारे में बात करें?`;
     }
-    return `Haha, mera poora focus toh aapko *${project?.name || 'hamare project'}* mein best property dilwane par hai! 🏡 Kya hum pricing ya site visit ke baare mein baat karein?`;
+    return `Haha, mera poora focus toh aapko *Bhole Baba Investments* mein best property dilwane par hai! 🏡 Kya hum pricing ya site visit ke baare mein baat karein?`;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -438,3 +438,144 @@ export async function getDynamicPortfolioCatalogue(
 
   return lines.join('\n\n');
 }
+
+/**
+ * Checks if the user is asking for general property/project details or what properties/projects are available
+ */
+export function isPropertyDetailsQuery(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
+  const patterns = [
+    /\b(property|project)\s*details?\b/i,
+    /\bdetails?\s*(bhejo|do|batao|share|milegi|chahiye|send|please)\b/i,
+    /^(details?|detail|info|information)$/i,
+    /\bkya\s*(hai|h)\s*(project|property)\b/i,
+    /\bkya\s*(kya)?\s*(projects?|properties|options)\s*(hain|h)?\b/i,
+    /\boptions\s*(batao|kya|dikhao)\b/i,
+    /\ball\s*projects\b/i,
+    /\blist\s*of\s*projects\b/i,
+    /\bkonsa\s*project\b/i,
+    /\bkaun\s*se\s*projects?\b/i,
+    /\bwhat\s*projects?\b/i,
+    /\bwhich\s*projects?\b/i,
+    /\btell\s*me\s*about\s*(the\s*)?(property|project)\b/i,
+    /\babout\s*(the\s*)?(property|project)\b/i,
+    /डिटेल/i,
+    /प्रॉपर्टी डिटेल/i,
+    /प्रोजेक्ट डिटेल/i,
+    /जानकारी/i,
+  ];
+  return patterns.some(p => p.test(lower));
+}
+
+/**
+ * Formats comprehensive details for a single selected or active project
+ */
+export function formatSingleProjectDetails(project: any, lang: DetectedLanguage): string {
+  if (!project) return '';
+
+  const units = (project.unitTypes || [])
+    .map((u: any) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` (From ${u.priceFrom})` : ''}`)
+    .join('\n');
+
+  const amenities = (project.amenities || []).slice(0, 6).join(', ');
+
+  if (lang === 'english') {
+    let reply = `Here are the complete details for *${project.name}*:\n\n`;
+    if (project.location) reply += `📍 *Location:* ${project.location}\n`;
+    if (project.priceRange) reply += `💰 *Pricing:* Starting @ ${project.priceRange}\n`;
+    if (units) reply += `📐 *Available Units & Sizes:*\n${units}\n`;
+    if (amenities) reply += `✨ *Key Amenities:* ${amenities}\n`;
+    if (project.possession) reply += `📅 *Possession:* ${project.possession}\n`;
+    if (project.reraNumber) reply += `🏛️ *RERA:* ${project.reraNumber}\n`;
+    if (project.summary) reply += `\nℹ️ *Summary:* ${project.summary}\n`;
+    reply += `\nWould you like to schedule a site visit this weekend to see the property in person? 🏡`;
+    return reply;
+  }
+
+  if (lang === 'hindi') {
+    let reply = `*${project.name}* की संपूर्ण जानकारी:\n\n`;
+    if (project.location) reply += `📍 *लोकेशन:* ${project.location}\n`;
+    if (project.priceRange) reply += `💰 *कीमत:* ${project.priceRange} से शुरू\n`;
+    if (units) reply += `📐 *उपलब्ध साइज व यूनिट्स:*\n${units}\n`;
+    if (amenities) reply += `✨ *सुविधाएं:* ${amenities}\n`;
+    if (project.possession) reply += `📅 *पजेशन:* ${project.possession}\n`;
+    if (project.reraNumber) reply += `🏛️ *रेरा (RERA):* ${project.reraNumber}\n`;
+    reply += `\nक्या आप इस सप्ताहांत पर प्रॉपर्टी देखने के लिए साइट विजिट शेड्यूल करना चाहेंगे? 🏡`;
+    return reply;
+  }
+
+  // Hinglish
+  let reply = `Yeh rahi *${project.name}* ki complete property details:\n\n`;
+  if (project.location) reply += `📍 *Location:* ${project.location}\n`;
+  if (project.priceRange) reply += `💰 *Pricing:* Starting @ ${project.priceRange}\n`;
+  if (units) reply += `📐 *Available Sizes & Units:*\n${units}\n`;
+  if (amenities) reply += `✨ *Key Amenities:* ${amenities}\n`;
+  if (project.possession) reply += `📅 *Possession:* ${project.possession}\n`;
+  if (project.reraNumber) reply += `🏛️ *RERA Number:* ${project.reraNumber}\n`;
+  reply += `\nKya hum is weekend par aapka ek sample flat site visit schedule karein taaki aap quality khud dekh sakein? 🏡`;
+  return reply;
+}
+
+/**
+ * Formats a numbered list of all active projects for the user to choose from
+ */
+export function formatMultiProjectList(projects: any[], lang: DetectedLanguage): string {
+  if (!projects || projects.length === 0) {
+    if (lang === 'english') return 'No active properties are currently listed in our database.';
+    return 'Filhaal database mein koi active project available nahi hai.';
+  }
+
+  const items = projects
+    .map((p, idx) => `${idx + 1}. *${p.name}*\n   📍 Location: ${p.location || 'Available on request'}\n   💰 Price: Starting @ ${p.priceRange || 'Available on request'}`)
+    .join('\n\n');
+
+  if (lang === 'english') {
+    return `We currently have these prime projects available at *Bhole Baba Investments*:\n\n${items}\n\nWhich project would you like to explore details for? Please reply with the *Project Name* or *Number (1, 2...)* 🏡`;
+  }
+
+  if (lang === 'hindi') {
+    return `*भोले बाबा इन्वेस्टमेंट्स* के पास वर्तमान में ये प्रमुख प्रोजेक्ट्स उपलब्ध हैं:\n\n${items}\n\nआप किस प्रोजेक्ट की पूरी जानकारी देखना चाहते हैं? कृपया प्रोजेक्ट का *नाम* या *नंबर (1, 2...)* लिखकर भेजें 🏡`;
+  }
+
+  return `Hamare paas *Bhole Baba Investments* ke ye prime projects available hain:\n\n${items}\n\nAap kaun se project ki details dekhna chahte hain? Bas project ka *Naam* ya *Number (1, 2...)* reply kar dein 🏡`;
+}
+
+/**
+ * Checks if user message is selecting a project by number ("1", "2") or name
+ */
+export function matchProjectFromSelection(text: string, activeProjects: any[]): any | null {
+  if (!text || !activeProjects || activeProjects.length === 0) return null;
+  const raw = text.trim();
+  const lower = raw.toLowerCase();
+
+  // 1. Exact numeric selection: "1", "2", "3", "#1", "project 1", "option 2"
+  const numMatch = lower.match(/^(?:project|option|number|no\.?|#)?\s*(\d{1,2})\b/i);
+  if (numMatch) {
+    const idx = parseInt(numMatch[1], 10) - 1;
+    if (idx >= 0 && idx < activeProjects.length) {
+      return activeProjects[idx];
+    }
+  }
+
+  // 2. Project name or keywords matching
+  for (const proj of activeProjects) {
+    const pName = (proj.name || '').toLowerCase().trim();
+    if (pName.length >= 3 && lower.includes(pName)) {
+      return proj;
+    }
+    const slug = (proj.slug || '').toLowerCase().trim();
+    if (slug.length >= 3 && lower.includes(slug)) {
+      return proj;
+    }
+    for (const kw of proj.keywords || []) {
+      const cleanKw = (kw || '').toLowerCase().trim();
+      if (cleanKw.length >= 3 && lower.includes(cleanKw)) {
+        return proj;
+      }
+    }
+  }
+
+  return null;
+}
+
