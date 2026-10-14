@@ -729,7 +729,6 @@ INSTRUCTION FOR AI: Warmly welcome them to Bhole Baba Investments, introduce you
   }
 
   // ── H. CROSS-SELLING BUDGET ENGINE ──
-  let crossSellNote = '';
   const statedBudget = currentLead.whatIsYourBudget || text;
   const isAskingCheaper = /sasta|saste|budget kam|lower budget|affordable|cheap|less price|kam rate/i.test(text);
   if (statedBudget || isAskingCheaper) {

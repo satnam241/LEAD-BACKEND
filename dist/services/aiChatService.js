@@ -461,12 +461,14 @@ Advisor: "Project prime location par situated hai. Kya hum is weekend par aapka 
 Buyer: "kya amenities hain?"
 Advisor: "Township mein wide roads, gated security, underground wiring aur landscaped parks available hain! Aap kis size ka plot ya unit prefer karenge?"`}
 
-CRITICAL INSTRUCTIONS:
-- Answer ONLY what the buyer asked.
+CRITICAL INSTRUCTIONS (ABSOLUTE ENFORCEMENT):
+- Answer accurately based ONLY on PRIMARY PROPERTY facts and database information provided above.
 - STRICTLY adhere to [ ${detectedLang.toUpperCase()} ]. ZERO foreign language words!
-- NEVER EVER GIVE EMPTY PROMISES: NEVER say "Sure, I can send you the details" or "I will provide the details" without actually including the details in the same message!
-- If the buyer asks for details, brochure, or overview, IMMEDIATELY provide the complete property facts (Location, Pricing, Available Plot/Flat Sizes, Amenities, Possession) directly in this reply!
-- Conclude in 2-3 sentences with a consultative next step question.`;
+- NEVER EVER GIVE EMPTY PROMISES: NEVER say "Sure, I can send you the details", "I will provide the details", or "I can share that with you" without actually including the details right in this message!
+- If the buyer asks for details, brochure, property overview, or says "send me" / "send details" / "bhejo" / "details do" / "tell me details", you MUST IMMEDIATELY provide the complete property facts (Project Name, Location, Starting Price, Available Plot/Flat Sizes & Spaces, Key Amenities, Possession Timeline, RERA) directly in this reply formatted with clean WhatsApp bullet points!
+- AVOID REPETITION: If previous assistant messages in the conversation history contained phrases like "Sure, I can send you the details", DO NOT REPEAT THAT! Deliver the requested factual details immediately!
+- If the buyer asked a specific single question (e.g., "is it gated?", "what is the road width?", "is loan available?", "where is it located?"), answer that specific question directly and concisely in 2-3 sentences from the database facts.
+- Conclude with ONE natural, consultative question guiding the buyer towards next steps (preferred configuration or a site visit).`;
     // Fetch recent conversation history
     const historyDocs = await conversationMessage_model_1.default.find({ leadId })
         .sort({ createdAt: -1 })
@@ -496,12 +498,25 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
     if (projectId) {
         projectDoc = await project_model_1.default.findById(projectId).lean();
     }
-    // 3. 🏡 INTERACTIVE SITE VISIT SLOT BOOKING ENGINE
+    // 3. Context & Background Action Placeholders (Side-effects run in background without overriding LLM)
+    let siteVisitNote = '';
+    let mediaNote = '';
+    let handoffNote = '';
+    let detailsNote = '';
+    let greetingNote = '';
+    let crossSellNote = '';
+    let faqHintNote = '';
+    let needsAgent = false;
+    let aiPaused = false;
+    let detectedIntent = 'general_ai_dialogue';
+    // ── A. SITE VISIT DETECTION & ENGINE ──
     if (isSiteVisitIntent(text)) {
+        detectedIntent = 'site_visit';
         const slot = parseSlotDateTime(text);
         if (slot) {
-            // Slot (day + time) parsed! Schedule site visit and calendar sync
+            detectedIntent = 'site_visit_confirmed';
             const visitMessage = `Site Visit Booked via WhatsApp for ${projectDoc?.name || 'Property'}`;
+            // Update Lead DB
             await lead_model_1.default.findByIdAndUpdate(lead._id, {
                 $set: {
                     'followUp.date': slot.date,
@@ -516,7 +531,7 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
                     updatedAt: new Date(),
                 },
             });
-            // Google Calendar Integration
+            // Google Calendar Integration (Background)
             try {
                 const Admin = (await Promise.resolve().then(() => __importStar(require('../models/admin.model')))).default;
                 const { createCalendarEvent } = await Promise.resolve().then(() => __importStar(require('./googleCalendar.service')));
@@ -533,9 +548,9 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
                 }
             }
             catch (calErr) {
-                console.warn('[Site Visit] Non-fatal Google Calendar sync warning:', calErr?.message || calErr);
+                console.warn('[Site Visit] Google Calendar sync warning:', calErr?.message || calErr);
             }
-            // Dual Support Email Notification (SUPPORT_EMAIL and SUPPORT_EMAIL1 + Admin)
+            // Dual Support Email Notification (Background)
             (0, emailService_1.sendSupportAlert)({
                 subject: `🏡 New Site Visit Booked: ${currentLead.fullName || 'Lead'} • ${slot.formattedSlot}`,
                 badge: '🏡 Site Visit Booked',
@@ -552,221 +567,63 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
                 },
                 ctaText: 'Open Lead in CRM →',
             }).catch(err => console.error('[Site Visit] Support alert error:', err));
-            let confirmReply = `🎉 *Site Visit Confirmed!*\n\nAapka sample flat visit schedule kar diya gaya hai:\n\n📅 *Slot:* ${slot.formattedSlot}\n📍 *Project:* ${projectDoc?.name || 'Our Property'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nHamare Senior Relationship Manager site par aapko receive karenge aur complete property tour denge. Agar aapko location direction chahiye ya time reschedule karna ho, toh bas yahan reply kar dein! 🏡`;
-            if (lang === 'english') {
-                confirmReply = `🎉 *Site Visit Confirmed!*\n\nYour sample flat visit has been scheduled:\n\n📅 *Slot:* ${slot.formattedSlot}\n📍 *Project:* ${projectDoc?.name || 'Our Property'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nOur Senior Relationship Manager will welcome you at the site and provide a complete property walkthrough. Feel free to reply here if you need location directions or wish to reschedule! 🏡`;
-            }
-            else if (lang === 'hindi') {
-                confirmReply = `🎉 *साइट विजिट कन्फर्म!*\n\nआपका सैंपल फ्लैट विजिट शेड्यूल कर दिया गया है:\n\n📅 *स्लॉट:* ${slot.formattedSlot}\n📍 *प्रोजेक्ट:* ${projectDoc?.name || 'प्रॉपर्टी'}${projectDoc?.location ? ` (${projectDoc.location})` : ''}\n\nहमारे सीनियर रिलेशनशिप मैनेजर साइट पर आपका स्वागत करेंगे और पूरा टूर देंगे। लोकेशन या समय बदलने के लिए यहाँ रिप्लाई करें! 🏡`;
-            }
-            await conversationMessage_model_1.default.create([
-                { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                { leadId: lead._id, phone, role: 'assistant', content: confirmReply, createdAt: new Date() },
-            ]);
-            await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-                $set: {
-                    lastMessageFromUser: text,
-                    lastMessageAt: new Date(),
-                    lastActiveAt: new Date(),
-                    activeProjectId: projectId,
-                },
-                $inc: { attemptCount: 1 },
-            }, { upsert: true, new: true });
-            await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-            (0, aiLearningService_1.logConversationForTraining)({
-                leadId: lead._id,
-                phone,
-                language: lang,
-                detectedIntent: 'site_visit_confirmed',
-                projectId,
-                projectName: projectDoc?.name || 'Bhole Baba Investments',
-                userMessage: text,
-                aiResponse: confirmReply,
-                source: 'whatsapp',
-            }).catch(() => { });
-            return { reply: confirmReply, needsAgent: false, aiPaused: false };
+            siteVisitNote = `SYSTEM ACTION COMPLETED: The site visit has been officially confirmed in the CRM & Calendar for: "${slot.formattedSlot}" for "${projectDoc?.name || 'our project'}".
+INSTRUCTION FOR AI: Dynamically generate a warm, enthusiastic, professional confirmation message for this booked slot (${slot.formattedSlot}). Inform them that our Senior Relationship Manager will welcome them at the site to give a complete walkthrough. Tell them they can reply here for exact location directions or if they ever need to reschedule. Ground everything dynamically in [ ${lang.toUpperCase()} ].`;
         }
         else {
-            // Site visit intent expressed, but no specific date/time given yet -> offer consultative slots
-            let slotOfferReply = `Bilkul! Hum aapka sample flat visit zaroor schedule kar dete hain taaki aap construction quality, layout aur actual sample flat khud dekh sakein 🏡\n\nKya aap *Saturday* ya *Sunday* mein visit karna chahenge? Aur kaun sa time aapke liye best rahega — *Morning (11:00 AM)* ya *Evening (4:00 PM)*?`;
-            if (lang === 'english') {
-                slotOfferReply = `Certainly! We would love to schedule your sample flat visit so you can inspect the construction quality, spacious layouts, and actual site in person 🏡\n\nWould you prefer visiting this *Saturday* or *Sunday*? And which time works best for you — *Morning (11:00 AM)* or *Evening (4:00 PM)*?`;
-            }
-            else if (lang === 'hindi') {
-                slotOfferReply = `बिल्कुल! हम आपका सैंपल फ्लैट विजिट ज़रूर शेड्यूल कर देते हैं ताकि आप कंस्ट्रक्शन क्वालिटी और लेआउट खुद देख सकें 🏡\n\nक्या आप *शनिवार* या *रविवार* को आना चाहेंगे? आपके लिए कौन सा समय सही रहेगा — *सुबह (11:00 AM)* या *शाम (4:00 PM)*?`;
-            }
-            await conversationMessage_model_1.default.create([
-                { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                { leadId: lead._id, phone, role: 'assistant', content: slotOfferReply, createdAt: new Date() },
-            ]);
-            await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-                $set: {
-                    lastMessageFromUser: text,
-                    lastMessageAt: new Date(),
-                    lastActiveAt: new Date(),
-                    activeProjectId: projectId,
-                },
-                $inc: { attemptCount: 1 },
-            }, { upsert: true, new: true });
-            await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-            (0, aiLearningService_1.logConversationForTraining)({
-                leadId: lead._id,
-                phone,
-                language: lang,
-                detectedIntent: 'site_visit_inquiry',
-                projectId,
-                projectName: projectDoc?.name || 'Bhole Baba Investments',
-                userMessage: text,
-                aiResponse: slotOfferReply,
-                source: 'whatsapp',
-            }).catch(() => { });
-            return { reply: slotOfferReply, needsAgent: false, aiPaused: false };
+            detectedIntent = 'site_visit_inquiry';
+            siteVisitNote = `USER INTENT: The buyer wants to visit the site or sample flat for "${projectDoc?.name || 'our property'}", but has not mentioned a specific date or time.
+INSTRUCTION FOR AI: Warmly welcome their visit interest. Consultatively ask whether Saturday or Sunday works best for their schedule, and whether Morning (11:00 AM) or Evening (4:00 PM) is preferred.`;
         }
     }
-    // 3. 📸 🎥 🗺️ MEDIA DISPATCH ENGINE (Images, Videos, Map)
+    // ── B. MEDIA DISPATCH ENGINE (Background delivery of Photos/Videos/Map) ──
     const mediaReq = detectMediaRequest(text);
     if (mediaReq && projectDoc) {
-        const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+        detectedIntent = `media_${mediaReq}`;
         if (mediaReq === 'images') {
             const images = Array.isArray(projectDoc.images) ? projectDoc.images.filter(Boolean) : [];
             if (images.length > 0) {
                 for (let i = 0; i < Math.min(images.length, 3); i++) {
                     const caption = i === 0 ? `📸 *${projectDoc.name}* • Sample Flat & Site Photo` : undefined;
-                    await (0, baileysService_1.sendMedia)(phone, images[i], caption).catch(() => { });
+                    (0, baileysService_1.sendMedia)(phone, images[i], caption).catch(() => { });
                 }
-                let replyText = `Yeh rahe *${projectDoc.name}* ke latest sample flat aur site photos! 📸\n\nKya hum is weekend par aapka sample flat visit schedule karein taaki aap quality khud dekh sakein? 🏡`;
-                if (lang === 'english') {
-                    replyText = `Here are the latest sample flat and site photos for *${projectDoc.name}*! 📸\n\nWould you like to schedule a site visit this weekend to experience the quality in person? 🏡`;
-                }
-                else if (lang === 'hindi') {
-                    replyText = `पेश हैं *${projectDoc.name}* के लेटेस्ट सैंपल फ्लैट और साइट के फोटो! 📸\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें ताकि आप कंस्ट्रक्शन क्वालिटी खुद देख सकें? 🏡`;
-                }
-                await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: replyText, createdAt: new Date() },
-                ]);
-                await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-                    $set: {
-                        lastMessageFromUser: text,
-                        lastMessageAt: new Date(),
-                        lastActiveAt: new Date(),
-                        activeProjectId: projectId,
-                    },
-                    $inc: { attemptCount: 1 },
-                }, { upsert: true, new: true });
-                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-                return { reply: replyText, needsAgent: false, aiPaused: false };
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched ${Math.min(images.length, 3)} sample flat and site photos of "${projectDoc.name}" to the buyer's WhatsApp.
+INSTRUCTION FOR AI: Dynamically acknowledge that the photos have been sent above, highlight the quality construction/layout, and consultatively ask if they would like to schedule a private site visit to tour the property in person.`;
             }
             else {
-                let fallbackText = `Humne *${projectDoc.name}* ke photos ki request note kar li hai! Hamari sales team aapko WhatsApp par gallery thodi der mein share kar degi 📸\n\nKya hum is weekend par aapka sample flat visit schedule karein? 🏡`;
-                if (lang === 'english') {
-                    fallbackText = `We have noted your request for photos of *${projectDoc.name}*! Our team will share the photo gallery on this WhatsApp chat shortly 📸\n\nWould you also like to schedule a site visit this weekend? 🏡`;
-                }
-                else if (lang === 'hindi') {
-                    fallbackText = `हमने *${projectDoc.name}* के फोटो की आपकी रिक्वेस्ट नोट कर ली है! हमारी टीम जल्द ही व्हाट्सएप पर फोटो शेयर करेगी 📸\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें? 🏡`;
-                }
-                await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: fallbackText, createdAt: new Date() },
-                ]);
-                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-                return { reply: fallbackText, needsAgent: false, aiPaused: false };
+                mediaNote = `NOTE: The buyer requested photos of "${projectDoc.name}", but new site photos are being prepared by the site team.
+INSTRUCTION FOR AI: Politely reassure the buyer that our team will share the updated photo gallery directly on WhatsApp shortly, and invite them to schedule a personal site visit in the meantime.`;
             }
         }
-        if (mediaReq === 'videos') {
+        else if (mediaReq === 'videos') {
             const videos = Array.isArray(projectDoc.videos) ? projectDoc.videos.filter(Boolean) : [];
             if (videos.length > 0) {
-                await (0, baileysService_1.sendMedia)(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`).catch(() => { });
-                let replyText = `Yeh raha *${projectDoc.name}* ka walkthrough video! 🎥\n\nKya aap actual site dekhne ke liye is weekend par private site visit schedule karna chahenge? 🏡`;
-                if (lang === 'english') {
-                    replyText = `Here is the official walkthrough video for *${projectDoc.name}*! 🎥\n\nWould you like to schedule a private site visit this weekend to tour the property in person? 🏡`;
-                }
-                else if (lang === 'hindi') {
-                    replyText = `पेश है *${projectDoc.name}* का वॉकथ्रू वीडियो! 🎥\n\nक्या आप प्रॉपर्टी खुद देखने के लिए इस सप्ताहांत साइट विजिट प्लान करना चाहेंगे? 🏡`;
-                }
-                await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: replyText, createdAt: new Date() },
-                ]);
-                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-                return { reply: replyText, needsAgent: false, aiPaused: false };
+                (0, baileysService_1.sendMedia)(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`).catch(() => { });
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the video walkthrough for "${projectDoc.name}" to their WhatsApp.
+INSTRUCTION FOR AI: Dynamically mention the video walkthrough sent above and consultatively ask if they would like to schedule a private site visit to see the project live.`;
             }
             else {
-                let fallbackText = `Humne *${projectDoc.name}* ke video walkthrough ki request note kar li hai! Hamari team aapko video link WhatsApp par shortly share karegi 🎥\n\nKya hum is weekend par aapka live site tour plan karein? 🏡`;
-                if (lang === 'english') {
-                    fallbackText = `We have noted your request for the walkthrough video of *${projectDoc.name}*! Our team will share it shortly 🎥\n\nWould you also like to plan a personal site tour this weekend? 🏡`;
-                }
-                else if (lang === 'hindi') {
-                    fallbackText = `हमने *${projectDoc.name}* के वीडियो की रिक्वेस्ट नोट कर ली है! हमारी टीम जल्द ही वीडियो शेयर करेगी 🎥\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें? 🏡`;
-                }
-                await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: fallbackText, createdAt: new Date() },
-                ]);
-                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-                return { reply: fallbackText, needsAgent: false, aiPaused: false };
+                mediaNote = `NOTE: The buyer requested a video walkthrough for "${projectDoc.name}".
+INSTRUCTION FOR AI: Inform them politely that our team will share the video walkthrough link shortly on WhatsApp, and ask if they would like to plan a personal site tour.`;
             }
         }
-        if (mediaReq === 'map') {
+        else if (mediaReq === 'map') {
             if (projectDoc.map && projectDoc.map.trim()) {
-                await (0, baileysService_1.sendMedia)(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`).catch(() => { });
-                let replyText = `Yeh raha *${projectDoc.name}* ka approved layout map aur master plan! 🗺️\n\nAapko kaun sa plot size ya location best lag raha hai? 🏡`;
-                if (lang === 'english') {
-                    replyText = `Here is the approved layout map & master plan for *${projectDoc.name}*! 🗺️\n\nWhich plot size or configuration best matches your preference? 🏡`;
-                }
-                else if (lang === 'hindi') {
-                    replyText = `पेश है *${projectDoc.name}* का अप्रूव्ड लेआउट मैप और मास्टर प्लान! 🗺️\n\nआपकी पसंद कौन से साइज के प्लॉट या यूनिट के लिए है? 🏡`;
-                }
-                await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: replyText, createdAt: new Date() },
-                ]);
-                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-                return { reply: replyText, needsAgent: false, aiPaused: false };
+                (0, baileysService_1.sendMedia)(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`).catch(() => { });
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the approved master plan and layout map for "${projectDoc.name}" to their WhatsApp.
+INSTRUCTION FOR AI: Dynamically mention the layout map sent above, and consultatively ask which plot size or configuration best matches their requirements.`;
             }
             else {
-                let fallbackText = `Humne *${projectDoc.name}* ke layout map aur master plan ki request note kar li hai! Hamari team WhatsApp par PDF layout share kar degi 🗺️\n\nKya aap location aur plots dekhne ke liye site visit karna chahenge? 🏡`;
-                if (lang === 'english') {
-                    fallbackText = `We have noted your request for the layout map of *${projectDoc.name}*! Our team will share the master plan shortly 🗺️\n\nWould you like to schedule a site visit? 🏡`;
-                }
-                else if (lang === 'hindi') {
-                    fallbackText = `हमने *${projectDoc.name}* के लेआउट मैप की रिक्वेस्ट नोट कर ली है! हमारी टीम जल्द ही मास्टर प्लान शेयर करेगी 🗺️\n\nक्या आप साइट विजिट प्लान करना चाहेंगे? 🏡`;
-                }
-                await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: fallbackText, createdAt: new Date() },
-                ]);
-                await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-                return { reply: fallbackText, needsAgent: false, aiPaused: false };
+                mediaNote = `NOTE: The buyer requested the layout map / master plan for "${projectDoc.name}".
+INSTRUCTION FOR AI: Inform them that our team will share the approved PDF layout shortly on WhatsApp, and ask what size or configuration they are considering.`;
             }
         }
     }
-    // 4. Check for explicit human agent / callback request
+    // ── C. HUMAN AGENT / CALL REQUEST (Handoff) ──
     if (isHandoffRequested(text)) {
-        let handoffReply = "Bilkul! Maine aapki request Bhole Baba Investments ki senior sales & advisory team ko forward kar di hai. Hamare senior advisor aapse jald hi call par connect karenge.";
-        if (lang === 'english') {
-            handoffReply = "Certainly! I have forwarded your request to our senior sales & advisory team at *Bhole Baba Investments*. A dedicated property advisor will call you shortly.";
-        }
-        else if (lang === 'hindi') {
-            handoffReply = "बिल्कुल! मैंने आपका अनुरोध *भोले बाबा इन्वेस्टमेंट्स* की सीनियर एडवाइजरी टीम को भेज दिया है। हमारे सलाहकार जल्द ही आपसे संपर्क करेंगे।";
-        }
-        // Save user and assistant messages
-        await conversationMessage_model_1.default.create([
-            { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-            { leadId: lead._id, phone, role: 'assistant', content: handoffReply, createdAt: new Date() },
-        ]);
-        // Update conversation state: needsAgent = true, aiPaused = true
-        await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-            $set: {
-                needsAgent: true,
-                aiPaused: true,
-                lastMessageFromUser: text,
-                lastMessageAt: new Date(),
-                lastActiveAt: new Date(),
-            },
-            $inc: { attemptCount: 1 },
-        }, { upsert: true, new: true });
-        await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
+        detectedIntent = 'agent_handoff';
+        needsAgent = true;
+        aiPaused = true;
         (0, emailService_1.sendSupportAlert)({
             subject: `🚨 Human Agent Requested: ${currentLead.fullName || 'Lead'}`,
             badge: '👤 Agent Handoff',
@@ -780,228 +637,137 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
             },
             ctaText: 'Open Lead & Call Customer →',
         }).catch(() => { });
-        (0, aiLearningService_1.logConversationForTraining)({
-            leadId: lead._id,
-            phone,
-            language: lang,
-            detectedIntent: 'agent_handoff',
-            projectId,
-            projectName: projectDoc?.name || 'Bhole Baba Investments',
-            userMessage: text,
-            aiResponse: handoffReply,
-            source: 'whatsapp',
-        }).catch(() => { });
-        return { reply: handoffReply, needsAgent: true, aiPaused: true };
+        handoffNote = `USER INTENT: The customer has explicitly requested to speak with a human agent/manager or requested a phone callback.
+INSTRUCTION FOR AI: Reassure the customer warmly and professionally that their request has been forwarded to our senior sales & advisory team at Bhole Baba Investments, and a dedicated property advisor will call them shortly.`;
     }
-    // ─────────────────────────────────────────────────────────────
-    // 5. 🎯 PROJECT SELECTION MATCHING (e.g. user typed "1", "2", or project name)
-    // ─────────────────────────────────────────────────────────────
+    // ── D. PROJECT SELECTION MATCHING ──
     const activeProjects = await project_model_1.default.find({ isActive: true }).lean();
+    let targetProjectId = projectId;
     const selectedProj = (0, projectKnowledgeService_1.matchProjectFromSelection)(text, activeProjects);
-    if (selectedProj && activeProjects.length > 1) {
-        console.log(`[AI Chat] 🎯 User selected project: "${selectedProj.name}" from text: "${text}"`);
-        const projectReply = (0, projectKnowledgeService_1.formatSingleProjectDetails)(selectedProj, lang);
-        await conversationMessage_model_1.default.create([
-            { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-            { leadId: lead._id, phone, role: 'assistant', content: projectReply, createdAt: new Date() },
-        ]);
-        await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-            $set: {
-                lastMessageFromUser: text,
-                lastMessageAt: new Date(),
-                lastActiveAt: new Date(),
-                activeProjectId: selectedProj._id,
-            },
-            $inc: { attemptCount: 1 },
-        }, { upsert: true, new: true });
-        await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-        (0, aiLearningService_1.logConversationForTraining)({
-            leadId: lead._id,
-            phone,
-            language: lang,
-            detectedIntent: 'project_selection',
-            projectId: selectedProj._id,
-            projectName: selectedProj.name,
-            userMessage: text,
-            aiResponse: projectReply,
-            source: 'whatsapp',
-        }).catch(() => { });
-        return { reply: projectReply, needsAgent: false, aiPaused: false };
+    let projectSelectionNote = '';
+    if (selectedProj) {
+        targetProjectId = selectedProj._id;
+        projectDoc = selectedProj;
+        detectedIntent = 'project_selection';
+        projectSelectionNote = `USER SELECTION: The buyer selected "${selectedProj.name}". Focus this response on "${selectedProj.name}" (Location: ${selectedProj.location || 'prime area'}, Starting Price: ${selectedProj.priceRange || 'market price'}). Dynamically highlight its features and ask what they would like to explore next.`;
     }
-    // ─────────────────────────────────────────────────────────────
-    // 6. 🏡 PROPERTY DETAILS INQUIRY (Single vs Multiple Projects Routing)
-    // ─────────────────────────────────────────────────────────────
-    if ((0, projectKnowledgeService_1.isPropertyDetailsQuery)(text)) {
-        let detailsReply = '';
-        let targetProject = projectDoc;
-        if (activeProjects.length <= 1) {
-            const singleProj = activeProjects[0] || projectDoc;
-            if (singleProj) {
-                detailsReply = (0, projectKnowledgeService_1.formatSingleProjectDetails)(singleProj, lang);
-                targetProject = singleProj;
-            }
+    else if (targetProjectId) {
+        if (!projectDoc) {
+            projectDoc = await project_model_1.default.findById(targetProjectId).lean();
+        }
+    }
+    if (!projectDoc && activeProjects.length > 0) {
+        projectDoc = activeProjects[0];
+        targetProjectId = projectDoc._id;
+    }
+    // ── E. PROPERTY DETAILS / PORTFOLIO QUERY ──
+    const isDetailsQuery = (0, projectKnowledgeService_1.isPropertyDetailsQuery)(text) ||
+        /(send\s+me|send\s+details|send\s+info|bhejo|share\s+details|share\s+info|share\s+brochure|tell\s+me\s+details|give\s+details|details\s+de\s+do|details\s+batao|overview|information)/i.test(text);
+    if (isDetailsQuery) {
+        detectedIntent = 'property_details';
+        const askingAllProjects = activeProjects.length > 1 &&
+            /(all\s*projects|kya\s*(kya)?\s*project|options|list|kaun\s*se\s*project|konsa\s*project|what\s*projects|which\s*projects)/i.test(text);
+        if (askingAllProjects) {
+            detailsNote = `USER INQUIRY: The buyer is asking about available projects / options across our portfolio.
+INSTRUCTION FOR AI: Clearly present all our active projects from the portfolio catalogue below (Project Names, Prime Locations, Starting Prices), and consultatively ask which one they would like to explore or visit!`;
         }
         else {
-            const askingPortfolio = /all\s*projects|kya\s*(kya)?\s*project|options|list|kaun\s*se\s*project|konsa\s*project|what\s*projects|which\s*projects/i.test(text);
-            if (askingPortfolio || !projectDoc) {
-                detailsReply = (0, projectKnowledgeService_1.formatMultiProjectList)(activeProjects, lang);
-            }
-            else {
-                detailsReply = (0, projectKnowledgeService_1.formatSingleProjectDetails)(projectDoc, lang);
-            }
-        }
-        if (detailsReply) {
-            await conversationMessage_model_1.default.create([
-                { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                { leadId: lead._id, phone, role: 'assistant', content: detailsReply, createdAt: new Date() },
-            ]);
-            await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-                $set: {
-                    lastMessageFromUser: text,
-                    lastMessageAt: new Date(),
-                    lastActiveAt: new Date(),
-                    activeProjectId: targetProject?._id || projectId,
-                },
-                $inc: { attemptCount: 1 },
-            }, { upsert: true, new: true });
-            await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-            (0, aiLearningService_1.logConversationForTraining)({
-                leadId: lead._id,
-                phone,
-                language: lang,
-                detectedIntent: 'property_details',
-                projectId: targetProject?._id || projectId,
-                projectName: targetProject?.name || 'Bhole Baba Investments',
-                userMessage: text,
-                aiResponse: detailsReply,
-                source: 'whatsapp',
-            }).catch(() => { });
-            return { reply: detailsReply, needsAgent: false, aiPaused: false };
+            detailsNote = `CRITICAL MANDATORY DIRECTIVE: The buyer is asking for property/project details (or said "send me" / "send details" / "details of this project").
+YOU MUST IMMEDIATELY PROVIDE THE COMPLETE PROPERTY DETAILS DIRECTLY IN THIS REPLY!
+DO NOT say "Sure I can send you" or "I will share details" without actually delivering the details right here!
+Include the following verified facts from PRIMARY PROPERTY in clean, structured WhatsApp bullet points:
+- Project Name & Exact Location
+- Starting Price / Pricing Range
+- Available Units / Plot Sizes & Space
+- Top Amenities & Infrastructure Highlights
+- Possession Timeline
+- RERA Status
+Conclude with a warm consultative question asking if they would like to schedule a site visit this weekend.`;
         }
     }
-    // 7. Check trained FAQs, keywords, and core project knowledge directly
-    let directAnswer = null;
-    if (projectDoc) {
-        directAnswer = (0, projectKnowledgeService_1.findDirectFaqAnswer)(projectDoc, text);
-    }
-    // 🛡️ Extra Safety Guardrail: Suppress false 35acres match if user didn't ask for area
-    if (directAnswer && /35\s*acres?|spread\s*over/i.test(directAnswer)) {
-        const isAskingArea = /acre|acres|spread|total area|land area|master plan/i.test(text);
-        if (!isAskingArea) {
-            console.warn(`[AI Guardrail] 🛡️ Suppressed false 35acres answer for query: "${text}"`);
-            directAnswer = null;
-        }
-    }
-    // Check Universal First Welcome Message if user sent a greeting
+    // ── F. GREETINGS CHECK ──
     const isGreeting = /^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(text.toLowerCase().trim());
-    if (!directAnswer && isGreeting) {
-        if (lang === 'english') {
-            directAnswer = `Hello! Welcome to *Bhole Baba Investments* Real Estate 🏡\n\nI am your dedicated AI Property Consultant. How can I assist you today? You can ask me about our residential & commercial projects, latest pricing, location, available layouts, or schedule a site visit.`;
-        }
-        else {
-            const { getGlobalWelcomeMessage } = await Promise.resolve().then(() => __importStar(require('./botSettingService')));
-            const globalMsg = await getGlobalWelcomeMessage();
-            if (globalMsg && globalMsg.trim()) {
-                directAnswer = globalMsg.trim();
-            }
-        }
+    if (isGreeting && !isDetailsQuery && !siteVisitNote && !mediaNote && !handoffNote) {
+        detectedIntent = 'greeting';
+        greetingNote = `USER GREETING: The user sent a greeting.
+INSTRUCTION FOR AI: Warmly welcome them to Bhole Baba Investments, introduce yourself as their AI Property Consultant, and consultatively ask how you can assist them today (exploring projects, latest pricing, location, available plot/flat sizes, or scheduling a site visit).`;
     }
-    // If user is in English mode, ensure directAnswer does not leak Hindi
-    if (directAnswer && lang === 'english') {
-        const hasHindi = /[\u0900-\u097F]|\b(hai|hain|kya|aap|karein|batao|humare|paas|se)\b/i.test(directAnswer);
-        if (hasHindi) {
-            // Re-route through LLM with English constraint so it gets translated cleanly
-            contextNote = `${contextNote ? `${contextNote}\n` : ''}VERIFIED DATABASE FACT: "${directAnswer}". Translate/express this fact in 100% PURE, PROFESSIONAL ENGLISH ONLY!`;
-            directAnswer = null;
+    // ── G. FAQ FACTUAL HINT (Used as knowledge context, NEVER as hardcoded static return) ──
+    if (projectDoc && !isDetailsQuery && !isGreeting && !siteVisitNote && !mediaNote && !handoffNote) {
+        const rawDirect = (0, projectKnowledgeService_1.findDirectFaqAnswer)(projectDoc, text);
+        if (rawDirect && rawDirect.trim()) {
+            faqHintNote = `DATABASE FACT FROM FAQ: "${rawDirect}". Synthesize and express this verified fact naturally, accurately, and consultatively in your dynamic response.`;
         }
     }
-    // 🎯 If a direct verified answer was found matching user language, use it!
-    if (directAnswer && directAnswer.trim()) {
-        const cleanAnswer = cleanWhatsAppReply(directAnswer);
-        await conversationMessage_model_1.default.create([
-            { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-            { leadId: lead._id, phone, role: 'assistant', content: cleanAnswer, createdAt: new Date() },
-        ]);
-        await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
-            $set: {
-                lastMessageFromUser: text,
-                lastMessageAt: new Date(),
-                lastActiveAt: new Date(),
-                activeProjectId: projectId,
-            },
-            $inc: { attemptCount: 1 },
-        }, { upsert: true, new: true });
-        await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-        (0, aiLearningService_1.logConversationForTraining)({
-            leadId: lead._id,
-            phone,
-            language: lang,
-            detectedIntent: 'direct_knowledge_or_persona',
-            projectId,
-            projectName: projectDoc?.name || 'Bhole Baba Investments',
-            userMessage: text,
-            aiResponse: cleanAnswer,
-            source: 'whatsapp',
-        }).catch(() => { });
-        return { reply: cleanAnswer, needsAgent: false, aiPaused: false };
-    }
-    // 8. 🎯 CROSS-SELLING BUDGET ENGINE
-    let crossSellNote = '';
+    // ── H. CROSS-SELLING BUDGET ENGINE ──
     const statedBudget = currentLead.whatIsYourBudget || text;
     const isAskingCheaper = /sasta|saste|budget kam|lower budget|affordable|cheap|less price|kam rate/i.test(text);
     if (statedBudget || isAskingCheaper) {
-        const crossProj = await (0, projectKnowledgeService_1.findCrossSellProject)(projectId, statedBudget);
+        const crossProj = await (0, projectKnowledgeService_1.findCrossSellProject)(targetProjectId, statedBudget);
         if (crossProj) {
-            crossSellNote = `CROSS-SELLING RECOMMENDATION: The buyer's budget appears to be around ${currentLead.whatIsYourBudget || 'budget-friendly'}. Our active portfolio property "${crossProj.name}" at "${crossProj.location}" starts from ${crossProj.priceRange}. Enthusiastically pitch "${crossProj.name}" as an ideal alternative matching their budget!`;
+            crossSellNote = `CROSS-SELLING RECOMMENDATION: The buyer asked for affordable / lower budget options. Introduce "${crossProj.name}" at "${crossProj.location}" (starting from ${crossProj.priceRange}) as an ideal match, highlighting why it offers outstanding value.`;
         }
     }
-    // Intelligent Contextual Fallback synthesized from DB: NEVER returns a repeated or dumb 1-liner!
+    // ── 5. ASSEMBLE COMPLETE CONTEXT NOTES ──
+    const contextParts = [];
+    if (contextNote)
+        contextParts.push(contextNote);
+    if (projectSelectionNote)
+        contextParts.push(projectSelectionNote);
+    if (siteVisitNote)
+        contextParts.push(siteVisitNote);
+    if (mediaNote)
+        contextParts.push(mediaNote);
+    if (handoffNote)
+        contextParts.push(handoffNote);
+    if (detailsNote)
+        contextParts.push(detailsNote);
+    if (greetingNote)
+        contextParts.push(greetingNote);
+    if (crossSellNote)
+        contextParts.push(crossSellNote);
+    if (faqHintNote)
+        contextParts.push(faqHintNote);
+    const fullContextNote = contextParts.join('\n\n');
+    // ── 6. DYNAMIC AI GENERATION GROUNDED IN DATABASE FACTS ──
     const smartFallback = (0, projectKnowledgeService_1.buildIntelligentRealEstateResponse)(projectDoc, text, lang, activeProjects);
-    // 6. Build system and conversation messages with dynamic facts, portfolio, and guardrails
-    let effectiveContextNote = directAnswer
-        ? `${contextNote ? `${contextNote}\n` : ''}VERIFIED DATABASE FACT FOR THIS QUERY: "${directAnswer}". Convey this answer directly, concisely, and accurately.`
-        : (contextNote || '');
-    if (crossSellNote) {
-        effectiveContextNote = `${effectiveContextNote ? `${effectiveContextNote}\n` : ''}${crossSellNote}`;
-    }
-    const messages = await buildMessages(lead._id, projectId, text, effectiveContextNote);
-    // 7. Call Local Llama 3.2 safely with smart fallback
+    const messages = await buildMessages(lead._id, targetProjectId, text, fullContextNote);
     const rawReply = await (0, llmService_1.askLLMSafe)(messages, smartFallback);
     let reply = cleanWhatsAppReply(rawReply);
     // Cap maximum reply length
     if (reply.length > AI_MAX_REPLY_CHARS) {
         reply = reply.slice(0, AI_MAX_REPLY_CHARS - 3).trim() + '...';
     }
-    // 6. Persist messages for history & transcript
+    // ── 7. PERSIST CONVERSATION & STATE ──
     await conversationMessage_model_1.default.create([
         { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
         { leadId: lead._id, phone, role: 'assistant', content: reply, createdAt: new Date() },
     ]);
-    // 7. Update ConversationState and upgrade lead interest to HOT!
     await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
         $set: {
             lastMessageFromUser: text,
             lastMessageAt: new Date(),
             lastActiveAt: new Date(),
-            activeProjectId: projectId,
+            activeProjectId: targetProjectId,
+            needsAgent,
+            aiPaused,
         },
         $inc: { attemptCount: 1 },
     }, { upsert: true, new: true });
-    // 🔥 Anyone actively querying/chatting on WhatsApp is an engaged HOT lead!
     await (0, chatbotService_1.persistLeadInterest)(lead._id, 'hot', { status: 'interested' });
-    // 📝 Continuously log high-quality conversational training pair for llm.sharesampatti.com
+    // ── 8. LOG FOR CONTINUOUS MODEL TRAINING (llm.sharesampatti.com) ──
     (0, aiLearningService_1.logConversationForTraining)({
         leadId: lead._id,
         phone,
         language: lang,
-        detectedIntent: 'general_ai_dialogue',
-        projectId,
+        detectedIntent,
+        projectId: targetProjectId,
         projectName: projectDoc?.name || 'Bhole Baba Investments',
         userMessage: text,
         aiResponse: reply,
         source: 'whatsapp',
     }).catch(() => { });
-    // 7. Auto-learning: if AI deferred to human team or was asked an unhandled question, record it
+    // ── 9. AUTO-LEARNING TRIGGER ──
     const lowerReply = reply.toLowerCase();
     const isDeferred = lowerReply.includes('team') ||
         lowerReply.includes('confirm') ||
@@ -1015,8 +781,8 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
         lowerReply.includes('will connect with you') ||
         lowerReply.includes('will contact you');
     if (isDeferred) {
-        (0, aiLearningService_1.recordLearnedQuestion)(projectId, text, lead._id).catch(() => { });
+        (0, aiLearningService_1.recordLearnedQuestion)(targetProjectId, text, lead._id).catch(() => { });
     }
-    return { reply, needsAgent: false, aiPaused: false };
+    return { reply, needsAgent, aiPaused };
 }
 //# sourceMappingURL=aiChatService.js.map
