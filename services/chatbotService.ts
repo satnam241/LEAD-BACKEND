@@ -18,7 +18,6 @@ import { generateReply } from './aiChatService';
 import { getLLMQueueLength, getActiveLLMClient } from './llmService';
 import { extractAndSaveLeadPreferences } from './aiLearningService';
 import {
-  findDirectFaqAnswer,
   buildIntelligentRealEstateResponse,
   detectLanguage,
 } from './projectKnowledgeService';
