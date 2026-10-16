@@ -92,12 +92,14 @@ async function uploadProjectMedia(req, res) {
         }
         const files = req.files;
         if (files) {
-            if (files.images && files.images.length > 0) {
-                const newImages = files.images.map(f => `/public/uploads/${f.filename}`);
+            const imgFiles = files.images || files.image;
+            if (imgFiles && imgFiles.length > 0) {
+                const newImages = imgFiles.map(f => `/public/uploads/${f.filename}`);
                 project.images = [...(project.images || []), ...newImages];
             }
-            if (files.videos && files.videos.length > 0) {
-                const newVideos = files.videos.map(f => `/public/uploads/${f.filename}`);
+            const vidFiles = files.videos || files.video;
+            if (vidFiles && vidFiles.length > 0) {
+                const newVideos = vidFiles.map(f => `/public/uploads/${f.filename}`);
                 project.videos = [...(project.videos || []), ...newVideos];
             }
             if (files.map && files.map.length > 0) {
@@ -108,13 +110,15 @@ async function uploadProjectMedia(req, res) {
             }
         }
         // Also support passing direct URLs in body (e.g. hosted links)
-        const { images, videos, map, brochure } = req.body;
-        if (images) {
-            const arr = Array.isArray(images) ? images : [images];
+        const { images, image, videos, video, map, brochure } = req.body;
+        const directImages = images || image;
+        if (directImages) {
+            const arr = Array.isArray(directImages) ? directImages : [directImages];
             project.images = [...(project.images || []), ...arr.filter(Boolean)];
         }
-        if (videos) {
-            const arr = Array.isArray(videos) ? videos : [videos];
+        const directVideos = videos || video;
+        if (directVideos) {
+            const arr = Array.isArray(directVideos) ? directVideos : [directVideos];
             project.videos = [...(project.videos || []), ...arr.filter(Boolean)];
         }
         if (map) {

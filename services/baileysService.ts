@@ -463,10 +463,13 @@ async function resolveMediaPayload(mediaUrl: string): Promise<Buffer | { url: st
   try {
     const cleanUrl = mediaUrl.trim();
 
-    // 1. If mediaUrl contains /public/uploads/ or starts with /public/
+    // 1. If mediaUrl contains uploads directory path
     let filename = '';
     if (cleanUrl.includes('/public/uploads/')) {
       const parts = cleanUrl.split('/public/uploads/');
+      filename = parts[1]?.split('?')[0]?.split('#')[0] || '';
+    } else if (cleanUrl.includes('/uploads/')) {
+      const parts = cleanUrl.split('/uploads/');
       filename = parts[1]?.split('?')[0]?.split('#')[0] || '';
     } else if (cleanUrl.startsWith('/public/') || cleanUrl.startsWith('public/')) {
       filename = path.basename(cleanUrl.split('?')[0]);

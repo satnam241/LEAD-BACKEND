@@ -6,7 +6,7 @@ export async function getProjectFacts(
   userMessage?: string
 ): Promise<string> {
   const project = await Project.findById(projectId).lean();
-  if (!project || !project.isActive) {
+  if (!project) {
     return '';
   }
 
@@ -170,168 +170,10 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
 
   const rawLower = userMessage.toLowerCase().trim();
   const cleanMsg = rawLower.replace(/[^\w\s\u0900-\u097F]/gi, ' ');
-  const lang = detectLanguage(userMessage);
 
   // ─────────────────────────────────────────────────────────────
-  // 1. TOP PRIORITY: Conversational & Small-Talk Handling
-  // ─────────────────────────────────────────────────────────────
-
-  // FIRST MESSAGE & INITIAL GREETINGS
-  if (/^(hello|hi|hey|hii|helo|hlo|namaste|good morning|good afternoon|good evening|hello sir|hi sir|hey sir|hello ji|hi ji|greetings|start)(\s+.*)?$/i.test(rawLower) && rawLower.split(/\s+/).length <= 4) {
-    if (lang === 'english') {
-      return `Hello! Welcome to *Bhole Baba Investments* Real Estate 🏡\n\nI am your dedicated AI Property Consultant. I am here to help you explore our prime residential & commercial projects, pricing, prime locations, unit layouts, or schedule a site visit.\n\nWhich project or detail would you like to explore today?`;
-    }
-    if (lang === 'hindi') {
-      return `नमस्ते! *भोले बाबा इन्वेस्टमेंट्स* रियल एस्टेट में आपका स्वागत है 🏡\n\nमैं आपका AI प्रॉपर्टी कंसलटेंट हूँ। हमारे पास जो भी प्रमुख प्रोजेक्ट्स हैं, उनकी लोकेशन, लाइव कीमतें, लेआउट व साइट विजिट की जानकारी के लिए मैं यहाँ उपस्थित हूँ।\n\nआप किस प्रोजेक्ट या प्रॉपर्टी के बारे में जानना चाहते हैं?`;
-    }
-    return `Hello! *Bhole Baba Investments* Real Estate mein aapka swagat hai 🏡\n\nMain aapka AI Property Consultant hoon. Hamare paas jo bhi prime properties aur projects hain, unki live pricing, location, unit sizes aur site visit ke regarding main aapki poori madad karunga.\n\nAap kis project ya property ki details dekhna chahenge?`;
-  }
-
-  if (/(who are you|tum kaun ho|aap kaun ho|kya naam hai|bot ho|robot ho|ai ho|kya tum ai ho|who r u|who you are|aap kya ho|kya kaam hai|kya karte ho|आप कौन|तुम कौन|क्या नाम|कौन हो|कौन हैं)/i.test(rawLower)) {
-    if (lang === 'english') {
-      return `I am the AI Property Consultant for *Bhole Baba Investments* Real Estate 🏡\n\nI am right here to help you with all the properties and projects in our portfolio! You can ask me anything about live pricing, prime locations, unit layouts, amenities, or schedule a site visit. Which property or detail would you like to explore?`;
-    }
-    if (lang === 'hindi') {
-      return `मैं *भोले बाबा इन्वेस्टमेंट्स* रियल एस्टेट का AI बॉट व प्रॉपर्टी कंसलटेंट हूँ 🏡\n\nहमारे पास जो भी प्रमुख प्रोजेक्ट्स हैं, उनके संबंध में सहायता करने के लिए मैं यहाँ उपस्थित हूँ! आप लाइव कीमतें, लोकेशन, यूनिट साइज, सुविधाएं या साइट विजिट बुक करने के बारे में बात कर सकते हैं। आप किस प्रोजेक्ट या प्रॉपर्टी के बारे में जानना चाहते हैं?`;
-    }
-    return `Main *Bhole Baba Investments* Real Estate ka AI Bot & Property Consultant hoon 🏡\n\nHamare paas jo bhi prime properties aur projects hain, unke regarding main aapki poori madad karne ke liye yahan hoon! Aap live pricing, locations, unit sizes, layouts ya site visit ke baare mein baat kar sakte hain. Aap kaun se project ya property ke baare mein jaanna chahenge?`;
-  }
-
-  if (/(kaise ho|how are you|kya haal|kya chal raha|sab theek|sab kaisa hai|kese ho|how r u|कैसे हो|कैसा है|क्या हाल|सब ठीक)/i.test(rawLower)) {
-    if (lang === 'english') {
-      return `I am doing great, thank you! 😊 Hope you are having a wonderful day. How may I assist you with properties at *Bhole Baba Investments* today? Would you like to check pricing or unit sizes?`;
-    }
-    if (lang === 'hindi') {
-      return `मैं बिल्कुल कुशलपूर्वक हूँ, धन्यवाद! 😊 आशा है आप भी सपरिवार कुशल होंगे। मैं *भोले बाबा इन्वेस्टमेंट्स* के प्रोजेक्ट्स के संबंध में आपकी क्या सहायता कर सकता हूँ? क्या आप कीमत या प्लॉट साइज देखना चाहेंगे?`;
-    }
-    return `Main bilkul badhiya hoon, thank you! 😊 Aasha hai aap bhi ache honge. Main *Bhole Baba Investments* ke projects ke regarding aapki kya madad kar sakta hoon? Kya aap pricing ya plot sizes dekhna chahenge?`;
-  }
-
-  if (/(weather|mausam|temperature|forecast|baarish|rain|garmi|thand|cold|hot today|मौसम|बारिश|गर्मी|ठंड|तापमान)/i.test(rawLower)) {
-    if (lang === 'english') {
-      return `Haha, I cannot check the weather forecast as I'm the Real Estate Consultant for *Bhole Baba Investments*! 🌤️ But I can definitely guide you on property pricing, connectivity, and scheduling a site visit. Would you like to explore location or unit sizes?`;
-    }
-    if (lang === 'hindi') {
-      return `मौसम का हाल तो मैं नहीं बता सकता क्योंकि मैं *भोले बाबा इन्वेस्टमेंट्स* का रियल एस्टेट एडवाइजर हूँ! 🌤️ लेकिन यहाँ प्रॉपर्टी की कीमत, लोकेशन और साइट विजिट के बारे में पूरी जानकारी दे सकता हूँ। क्या आप लोकेशन या प्लॉट साइज जानना चाहेंगे?`;
-    }
-    return `Haha, main weather forecast toh nahi bata sakta kyunki main *Bhole Baba Investments* ka Real Estate Advisor hoon! 🌤️ Lekin agar aap yahan properties ki location, pricing ya sample flat visit ke baare mein jaanna chahte hain, toh main zaroor guide kar sakta hoon. Kya aap location ya plot sizes explore karna chahenge?`;
-  }
-
-  if (/(thanks|thank you|shukriya|dhanyawad|thx|धन्यवाद|शुक्रिया)/i.test(rawLower)) {
-    if (lang === 'english') {
-      return `You're most welcome! 🤝 Feel free to let me know if you have any questions about properties at *Bhole Baba Investments* or wish to plan a site visit.`;
-    }
-    if (lang === 'hindi') {
-      return `आपका बहुत-बहुत स्वागत है! 🤝 यदि *भोले बाबा इन्वेस्टमेंट्स* के प्रोजेक्ट्स के बारे में कोई अन्य सवाल हो या साइट विजिट प्लान करनी हो, तो अवश्य बताएं।`;
-    }
-    return `Most welcome! 🤝 Agar *Bhole Baba Investments* ke regarding koi bhi sawal ho ya site visit plan karni ho, toh zaroor batayein.`;
-  }
-
-  if (/(joke|jokes|gana|song|movie|film|cricket|match|modi|politics|चुटकुला|गाना|फिल्म)/i.test(rawLower)) {
-    if (lang === 'english') {
-      return `Haha, my entire focus is on helping you find your dream property with *Bhole Baba Investments*! 🏡 Shall we discuss pricing or schedule a site visit?`;
-    }
-    if (lang === 'hindi') {
-      return `हाँ, मेरा पूरा ध्यान तो आपको *भोले बाबा इन्वेस्टमेंट्स* में बेहतरीन प्रॉपर्टी दिलाने पर है! 🏡 क्या हम कीमत या साइट विजिट के बारे में बात करें?`;
-    }
-    return `Haha, mera poora focus toh aapko *Bhole Baba Investments* mein best property dilwane par hai! 🏡 Kya hum pricing ya site visit ke baare mein baat karein?`;
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // 2. Attribute-based intelligent matching (Price, Location, Possession, Sizes)
-  // ─────────────────────────────────────────────────────────────
-  const isAskingPrice = [
-    'price', 'rate', 'budget', 'cost', 'kitne', 'kimat', 'amount', 'pricing', 'lakh', 'cr', 'bhav', 'paisa', 'costing', 'rate kya',
-    'कीमत', 'कीमतें', 'दाम', 'रेट', 'प्राइस', 'बजट', 'रुपये', 'लाख', 'भाव', 'कितने का', 'मूल्य'
-  ].some(w => rawLower.includes(w));
-
-  if (isAskingPrice && project.priceRange) {
-    if (lang === 'english') {
-      let priceReply = `The price range for *${project.name}* starts from *${project.priceRange}*.`;
-      if (project.unitTypes && project.unitTypes.length > 0) {
-        const unitDetails = project.unitTypes
-          .filter((u: any) => u.priceFrom)
-          .map((u: any) => `• ${u.type}: Starting from ${u.priceFrom}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`)
-          .join('\n');
-        if (unitDetails) priceReply += `\n\n${unitDetails}`;
-      }
-      priceReply += `\n\nAre you looking for self-use or investment purpose? 🏡`;
-      return priceReply;
-    }
-    if (lang === 'hindi') {
-      let priceReply = `*${project.name}* में कीमतें *${project.priceRange}* से शुरू होती हैं।`;
-      if (project.unitTypes && project.unitTypes.length > 0) {
-        const unitDetails = project.unitTypes
-          .filter((u: any) => u.priceFrom)
-          .map((u: any) => `• ${u.type}: शुरुआती दर ${u.priceFrom}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`)
-          .join('\n');
-        if (unitDetails) priceReply += `\n\n${unitDetails}`;
-      }
-      priceReply += `\n\nक्या आप यह प्रॉपर्टी खुद रहने के लिए देख रहे हैं या निवेश के लिए? 🏡`;
-      return priceReply;
-    }
-    let priceReply = `*${project.name}* mein price starting *${project.priceRange}* se hai.`;
-    if (project.unitTypes && project.unitTypes.length > 0) {
-      const unitDetails = project.unitTypes
-        .filter((u: any) => u.priceFrom)
-        .map((u: any) => `• ${u.type}: Starting from ${u.priceFrom}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`)
-        .join('\n');
-      if (unitDetails) priceReply += `\n\n${unitDetails}`;
-    }
-    priceReply += `\n\nAap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye? 🏡`;
-    return priceReply;
-  }
-
-  const isAskingLocation = [
-    'location', 'address', 'kahan', 'kahape', 'sector', 'road', 'where', 'situated', 'landmark', 'pataa', 'site kahan', 'site address',
-    'लोकेशन', 'कहाँ', 'कहा', 'पता', 'कहाँ पर', 'कहा पे', 'स्थान', 'जगह', 'रास्ता', 'पहुंचना', 'किधर'
-  ].some(w => rawLower.includes(w));
-
-  if (isAskingLocation && project.location) {
-    if (lang === 'english') {
-      return `*${project.name}* is located at *${project.location}*.\n\nWould you like more details on nearby connectivity, or shall we arrange a site visit this weekend? 🏡`;
-    }
-    if (lang === 'hindi') {
-      return `*${project.name}* प्राइम लोकेशन *${project.location}* पर स्थित है।\n\nक्या हम इस सप्ताहांत पर आपका साइट विजिट शेड्यूल करें? 🏡`;
-    }
-    return `*${project.name}* prime location par situated hai — *${project.location}*.\n\nKya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
-  }
-
-  const isAskingPossession = [
-    'possession', 'ready', 'move in', 'construction', 'timeline', 'kab tak', 'delivery', 'handover', 'completion',
-    'पजेशन', 'कब्जा', 'कब तक', 'तैयार', 'हैंडओवर', 'निर्माण'
-  ].some(w => rawLower.includes(w));
-
-  if (isAskingPossession && project.possession) {
-    if (lang === 'english') {
-      return `The possession timeline for *${project.name}* is *${project.possession}*.\n\nWould you like to schedule a site visit to inspect ongoing development? 🏡`;
-    }
-    if (lang === 'hindi') {
-      return `*${project.name}* का पजेशन टाइमलाइन *${project.possession}* है।\n\nक्या आप कंस्ट्रक्शन क्वालिटी देखने के लिए साइट विजिट प्लान करना चाहेंगे? 🏡`;
-    }
-    return `*${project.name}* ka possession timeline *${project.possession}* hai.\n\nKya aap construction quality aur development dekhne ke liye site visit arrange karna chahenge? 🏡`;
-  }
-
-  const isAskingSizes = [
-    'size', 'sqft', 'sq.ft', 'units', 'flat', 'apartment', 'bhk', 'configuration', 'space', 'layouts', 'plot size',
-    'साइज', 'प्लॉट', 'गज', 'स्क्वायर यार्ड', 'क्षेत्रफल', 'बीएचके', 'फ्लैट', 'आकार', 'नाप'
-  ].some(w => rawLower.includes(w));
-
-  if (isAskingSizes && project.unitTypes && project.unitTypes.length > 0) {
-    const unitList = project.unitTypes
-      .map((u: any) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` — Rate: ${u.priceFrom}` : ''}`)
-      .join('\n');
-    if (lang === 'english') {
-      return `Available configurations at *${project.name}*:\n\n${unitList}\n\nWhich configuration best suits your requirement?`;
-    }
-    if (lang === 'hindi') {
-      return `*${project.name}* में उपलब्ध साइज और कॉन्फ़िगरेशन:\n\n${unitList}\n\nआपकी पसंद कौन से साइज के लिए है?`;
-    }
-    return `*${project.name}* mein available configurations:\n\n${unitList}\n\nAapki requirement kis configuration ya size ke liye best rahegi?`;
-  }
-
-  // ─────────────────────────────────────────────────────────────
-  // 3. Trained FAQs Matcher (With Stop-Word Filtering & High Confidence)
+  // Trained Project FAQs Matcher (Database FAQs Only)
+  // Conversational chat & project synthesis are handled dynamically by Gemini AI!
   // ─────────────────────────────────────────────────────────────
   const STOP_WORDS = new Set([
     'who', 'are', 'you', 'how', 'is', 'am', 'was', 'were', 'the', 'in', 'to', 'for',
@@ -446,9 +288,15 @@ export async function getDynamicPortfolioCatalogue(
     query._id = { $ne: excludeProjectId };
   }
 
-  const projects = await Project.find(query)
+  let projects = await Project.find(query)
     .select('name location priceRange unitTypes developer summary')
     .lean();
+
+  if (!projects || projects.length === 0) {
+    projects = await Project.find(excludeProjectId ? { _id: { $ne: excludeProjectId } } : {})
+      .select('name location priceRange unitTypes developer summary')
+      .lean();
+  }
 
   if (!projects || projects.length === 0) {
     return 'No other active properties currently available in the database.';

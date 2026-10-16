@@ -131,7 +131,7 @@ export function getActiveLLMClient(): ResolvedClient {
 
     return {
       client: selected.client,
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
       provider: 'gemini',
       keyIndex: selected.index,
       totalKeysInPool: pool.length,
@@ -260,7 +260,15 @@ export async function askLLM(
   const pool = getGeminiKeyPool();
   if (pool.length > 0) {
     const candidateModels = Array.from(
-      new Set([process.env.GEMINI_MODEL, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'].filter(Boolean))
+      new Set(
+        [
+          process.env.GEMINI_MODEL,
+          'gemini-3.5-flash-lite',
+          'gemini-flash-lite-latest',
+          'gemini-3-flash-preview',
+          'gemini-flash-latest',
+        ].filter(Boolean)
+      )
     ) as string[];
     const now = Date.now();
     // Sort keys: available first, then lowest chatCount for fair load distribution
@@ -275,18 +283,48 @@ export async function askLLM(
       keyEntry.totalRequests++;
       keyEntry.lastUsedAt = new Date();
 
-      let keySucceeded = false;
       for (const m of candidateModels) {
         try {
           console.log(`[Gemini Pool] 🤖 Calling Key #${keyEntry.index + 1} (${keyEntry.maskedKey} - ${m}) [Total chats: ${keyEntry.chatCount}]...`);
-          const response = await keyEntry.client.chat.completions.create({
-            model: m,
-            messages,
-            max_tokens: maxTokens,
-            temperature,
-          });
+          let raw = '';
+          try {
+            const response = await keyEntry.client.chat.completions.create({
+              model: m,
+              messages,
+              max_tokens: maxTokens,
+              temperature,
+            });
+            raw = response.choices?.[0]?.message?.content || '';
+          } catch (sdkErr: any) {
+            const status = sdkErr?.status || sdkErr?.statusCode || 0;
+            const errMsg = sdkErr?.message || String(sdkErr);
+            if (status === 429 || /rate limit|resource_exhausted|quota|429/i.test(errMsg)) {
+              throw sdkErr;
+            }
+            // Fallback to direct Gemini REST generateContent API
+            console.log(`[Gemini Pool] 🔄 Trying direct REST fallback for ${m} on Key #${keyEntry.index + 1}...`);
+            const sysMsg = messages.find(msg => msg.role === 'system')?.content || '';
+            const chatContents = messages
+              .filter(msg => msg.role !== 'system')
+              .map(msg => ({
+                role: msg.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: msg.content }],
+              }));
+            if (chatContents.length === 0 && sysMsg) {
+              chatContents.push({ role: 'user', parts: [{ text: 'Hello' }] });
+            }
+            const restRes = await axios.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${keyEntry.apiKey}`,
+              {
+                ...(sysMsg ? { system_instruction: { parts: [{ text: sysMsg }] } } : {}),
+                contents: chatContents,
+                generationConfig: { maxOutputTokens: maxTokens, temperature },
+              },
+              { timeout: 30000 }
+            );
+            raw = restRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          }
 
-          const raw = response.choices?.[0]?.message?.content || '';
           const cleaned = cleanThinkTags(raw);
           if (cleaned && cleaned.trim()) {
             keyEntry.chatCount++;
@@ -307,13 +345,13 @@ export async function askLLM(
             break; // Switch to next key in pool
           }
 
-          if (status === 404 || /not found|unsupported|does not exist/i.test(errMsg)) {
-            console.warn(`[Gemini Pool] ⚠️ Model "${m}" not accessible on Key #${keyEntry.index + 1}, trying next candidate model...`);
+          if (status === 404 || status === 400 || /not found|unsupported|does not exist|invalid argument|publisher model/i.test(errMsg)) {
+            console.warn(`[Gemini Pool] ⚠️ Model "${m}" not accessible on Key #${keyEntry.index + 1} (${errMsg}), trying next candidate model...`);
             continue;
           }
 
           console.error(`[Gemini Pool] ❌ Key #${keyEntry.index + 1} (${keyEntry.maskedKey}) error (${status}):`, errMsg);
-          break; // Switch to next key
+          continue; // Try next candidate model before giving up key
         }
       }
     }

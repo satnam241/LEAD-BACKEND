@@ -42,14 +42,32 @@ if (!fs_1.default.existsSync(uploadsDir)) {
     fs_1.default.mkdirSync(uploadsDir, { recursive: true });
 }
 // 🛡️ Security Headers
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    // Do not restrict X-Frame-Options on uploads so PDF brochure and media previews render smoothly
+    if (!req.path.includes("/uploads") && !req.path.endsWith(".pdf")) {
+        res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    }
     res.setHeader("X-XSS-Protection", "1; mode=block");
     next();
 });
-app.use("/public", express_1.default.static("public", { dotfiles: "deny", maxAge: "1d" }));
+// ✅ Enable CORS before static assets & API routes
 app.use((0, cors_1.default)({ origin: true, credentials: true }));
+const staticOptions = {
+    dotfiles: "deny",
+    maxAge: "1d",
+    setHeaders: (res) => {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+};
+// ✅ Serve uploads under all path variations so frontend & external previews never 404
+app.use("/public/uploads", express_1.default.static(uploadsDir, staticOptions));
+app.use("/uploads", express_1.default.static(uploadsDir, staticOptions));
+app.use("/api/public/uploads", express_1.default.static(uploadsDir, staticOptions));
+app.use("/api/uploads", express_1.default.static(uploadsDir, staticOptions));
+app.use("/public", express_1.default.static(path_1.default.join(process.cwd(), "public"), staticOptions));
+app.use("/api/public", express_1.default.static(path_1.default.join(process.cwd(), "public"), staticOptions));
 app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.urlencoded({ extended: true }));
 app.get("/", (_req, res) => {
