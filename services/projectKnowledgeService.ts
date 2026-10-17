@@ -101,63 +101,159 @@ export function parsePriceToLakhs(str: string): number | null {
 
 export type DetectedLanguage = 'english' | 'hinglish' | 'hindi';
 
-export function detectLanguage(text: string): DetectedLanguage {
-  if (!text) return 'english';
+export interface LanguageContext {
+  history?: Array<{ role: string; content: string }>;
+  preferredLanguage?: DetectedLanguage | null;
+}
+
+// Distinct Roman Hindi tokens that NEVER collide with valid English words
+const DISTINCT_HINGLISH_TOKENS = new Set([
+  'kya', 'hai', 'hain', 'h', 'hn', 'haan', 'ha', 'han', 'mein', 'main', 'kitna', 'kitne', 'kitni',
+  'kahan', 'kaha', 'batao', 'batayein', 'bataiye', 'batado', 'bata', 'btao', 'bta', 'chahiye',
+  'chahie', 'hoga', 'hogi', 'honge', 'karna', 'karein', 'kare', 'krna', 'kro', 'karo', 'kaise',
+  'kese', 'accha', 'achha', 'theek', 'thik', 'sasta', 'saste', 'mehenga', 'mehenge', 'paas', 'pas',
+  'bhi', 'kuch', 'kuj', 'bhejo', 'bhejiye', 'bhej', 'dekho', 'dekhna', 'dekh', 'dekhein', 'kr',
+  'nhi', 'nahi', 'na', 'raha', 'rahi', 'rahe', 'rha', 'rhi', 'rhe', 'humein', 'hume', 'humara',
+  'humari', 'humare', 'aapko', 'aapke', 'aapka', 'aapki', 'aap', 'mujhe', 'mujhko', 'mera', 'meri',
+  'mere', 'kaun', 'konsa', 'konsi', 'kaunsa', 'kaunsi', 'kon', 'yaar', 'yr', 'dost', 'bolo', 'bol',
+  'bole', 'bolna', 'karwa', 'karwana', 'subah', 'shaam', 'sham', 'dopahar', 'raat', 'chhat',
+  'gaadi', 'gadi', 'bache', 'bachon', 'pata', 'dhanyawad', 'shukriya', 'namaste', 'pranam', 'apna',
+  'apne', 'apni', 'isme', 'isse', 'ise', 'usse', 'unhe', 'unko', 'iska', 'iski', 'iske',
+  'uska', 'uski', 'uske', 'inka', 'inki', 'inke', 'unka', 'unki', 'unke', 'ab', 'abhi', 'kab',
+  'kbtak', 'kabtak', 'fir', 'phir', 'baad', 'pehle', 'pahle', 'thoda', 'thodi', 'bohot', 'bahut',
+  'bhut', 'jyada', 'jada', 'kam', 'aur', 'par', 'pe', 'se', 'ko', 'ka', 'ki', 'ke', 'bas',
+  'sirf', 'khali', 'le', 'lo', 'lena', 'lenge', 'lia', 'liya', 'di', 'diya', 'de', 'du',
+  'dena', 'denge', 'chalega', 'chalegi', 'chalenge', 'hota', 'hoti', 'hote', 'tha', 'thi', 'thhe',
+  'aa', 'aao', 'aana', 'aayenge', 'aate', 'ja', 'jao', 'jana', 'jayenge', 'jate', 'mil', 'milo',
+  'milna', 'milega', 'milegi', 'samjh', 'samjha', 'samjho', 'pooch', 'poochho', 'poochna', 'puch',
+  'puchho', 'puchna', 'baat', 'baatcheet', 'batcheet', 'kyu', 'kyun', 'kyunki', 'kyuki', 'kyuuki',
+  'aisi', 'aisa', 'aise', 'waise', 'waisa', 'yahan', 'yahin', 'wahan', 'wahin', 'idhar', 'udhar',
+  'kidhar', 'log', 'logon', 'bhai', 'bhaiya', 'bro', 'sirji', 'saheb', 'sab', 'sabhi', 'sabse',
+  'aage', 'peeche', 'samne', 'saamne', 'beech', 'taraf', 'tarikh', 'tareekh', 'baje', 'ghante',
+  'mahina', 'saal', 'zameen', 'jameen', 'makan', 'makaan', 'kothi', 'kiraya', 'khareed', 'khareedna',
+  'bikau', 'khareeddar', 'naya', 'nayi', 'naye', 'purana', 'purani', 'purane', 'suvidha',
+  'suvidhayein', 'rasta', 'raasta', 'raste', 'sadak', 'naksha', 'bijli', 'paani', 'pani', 'kabza',
+  'registry', 'kist', 'kisht', 'byaj', 'byaaj', 'chhoot', 'daam', 'bhao', 'bhav', 'bdda', 'bada',
+  'chota', 'chhota', 'krrha', 'bataye', 'gandu'
+]);
+
+// Common Hinglish compound phrases that immediately confirm Hinglish
+const HINGLISH_PHRASES_REGEX = /\b(kya\s+hai|kitna\s+hai|kaha\s+hai|kahan\s+hai|batao\s+na|bhej\s+(do|du|de|na)|bhejo\s+na|send\s+(karo|kr\s*do|kardo|krna)|share\s+(karo|kr\s*do|kardo)|batado|bata\s+(do|du|de)|bta\s+(do|du|de)|bataiye|call\s+(karo|krna|karna)|baat\s+(karni|kr|krrha|kre|kare)|kab\s+tak|kab\s+milega|kaisa\s+hai|kya\s+rate|rate\s+kya|price\s+kya|kuch\s+discount|kitne\s+ka|details\s+(do|de\s*do|de)|brochure\s+(do|de\s*do|de)|location\s+(do|bhejo|send\s+karo)|visit\s+(karna|krna)|dekhna\s+hai|lena\s+hai|chahiye|kar\s+(do|du|de)|kr\s+(do|du|de)|ha\s+bhai|haan\s+bhai|kya\s+scene\s+hai|chalega\s+kya|milega\s+kya|kr\s+rha|krrha\s+h|hisab\s+se|hisaab\s+se|mat\s+karo|nhi\s+chahiye|nahi\s+chahiye|answer\s+kre|ans\s+kre|fix\s+kro)\b/i;
+
+// Grammatical English phrases that confirm natural English phrasing
+const DEFINITE_ENGLISH_PHRASES_REGEX = /\b(could\s+you|would\s+you|can\s+you|please\s+provide|i\s+would\s+like\s+to|i\s+want\s+to\s+know|what\s+is\s+the|where\s+is\s+the|how\s+much\s+is|when\s+will\s+it|is\s+there\s+any|are\s+there\s+any|do\s+you\s+have|does\s+this\s+project|looking\s+for|interested\s+in|let\s+me\s+know|kindly\s+share|schedule\s+a\s+visit|thank\s+you\s+for|i\s+am\s+looking|we\s+are\s+looking|my\s+budget\s+is|can\s+i\s+get|could\s+i\s+get|can\s+we\s+arrange|i\s+wish\s+to|please\s+share\s+the|please\s+send\s+the|could\s+you\s+share|give\s+me\s+more\s+details|tell\s+me\s+about|what\s+are\s+the|payment\s+plan|down\s+payment)\b/i;
+
+// Genuine English syntactic markers (words that are not borrowed into casual Hinglish)
+const DEFINITE_ENGLISH_WORDS = new Set([
+  'the', 'which', 'whose', 'whom', 'their', 'there', 'theirs', 'myself', 'yourself', 'ourselves',
+  'between', 'among', 'through', 'during', 'before', 'after', 'above', 'below',
+  'because', 'although', 'however', 'therefore', 'furthermore', 'regarding', 'concerning',
+  'according', 'specifications', 'assistance', 'appreciate', 'regards', 'kindly',
+  'would', 'could', 'should', 'starting', 'apartments', 'payment'
+]);
+
+/**
+ * Intelligent Language Detector with Conversation History Memory:
+ * 1. Checks pure Hindi (Devanagari script)
+ * 2. Checks explicit language requests (e.g. "talk in english", "hindi me batao")
+ * 3. Checks definitive Hinglish words & phrases
+ * 4. Checks definitive English sentence grammar
+ * 5. For ambiguous/short/loan-word messages (e.g. "ok", "yes", "send location", "brochure", "site visit"):
+ *    Retains the conversation's active preferredLanguage or inspects old chat history!
+ */
+export function detectLanguage(
+  text: string,
+  context?: LanguageContext | DetectedLanguage
+): DetectedLanguage {
+  if (!text) {
+    if (typeof context === 'string') return context;
+    if (context && context.preferredLanguage) return context.preferredLanguage;
+    return 'hinglish';
+  }
 
   // 1. Pure Hindi Devanagari script (Unicode range 0900-097F)
   if (/[\u0900-\u097F]/.test(text)) {
     return 'hindi';
   }
 
-  const lower = text.toLowerCase();
-  const words = lower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
-  if (words.length === 0) return 'english';
+  const rawLower = text.toLowerCase().trim();
 
-  // Distinct Roman Hindi tokens that NEVER collide with valid English words
-  const distinctHinglishTokens = new Set([
-    'kya', 'hai', 'hain', 'mein', 'kitna', 'kitne', 'kitni', 'kahan', 'kaha',
-    'batao', 'batayein', 'bataiye', 'chahiye', 'chahie', 'hoga', 'hogi', 'honge',
-    'karna', 'karein', 'kare', 'kaise', 'kese', 'accha', 'achha', 'theek', 'thik',
-    'sasta', 'saste', 'mehenga', 'mehenge', 'paas', 'bhi', 'kuch', 'bhejo',
-    'bhejiye', 'dekho', 'dekhna', 'btao', 'kr', 'nhi', 'nahi', 'raha', 'rahi',
-    'rahe', 'humein', 'aapko', 'mujhe', 'mera', 'meri', 'mere', 'humara',
-    'humari', 'kaun', 'konsa', 'konsi', 'kaunsa', 'kaunsi', 'yaar', 'dost',
-    'bolo', 'karwa', 'karwana', 'subah', 'shaam', 'dopahar', 'chhat', 'gaadi',
-    'gadi', 'bache', 'bata', 'batana', 'pata', 'dhanyawad', 'shukriya', 'namaste',
-    'pranam', 'apna', 'apne', 'apni', 'bta', 'krna', 'kro', 'karo', 'gandu'
-  ]);
-
-  // Common English words in real-estate & daily chat
-  const commonEnglishWords = new Set([
-    'the', 'is', 'are', 'am', 'was', 'were', 'will', 'would', 'could', 'should',
-    'can', 'please', 'tell', 'give', 'send', 'show', 'property', 'project',
-    'location', 'price', 'pricing', 'details', 'brochure', 'visit', 'available',
-    'apartment', 'flat', 'plots', 'villa', 'about', 'want', 'looking', 'for',
-    'have', 'has', 'had', 'any', 'some', 'this', 'that', 'these', 'those',
-    'good', 'morning', 'afternoon', 'evening', 'hello', 'hi', 'hey', 'thank',
-    'thanks', 'you', 'your', 'my', 'our', 'we', 'they', 'them', 'their', 'i',
-    'me', 'call', 'contact', 'need', 'interested', 'rate', 'cost', 'where',
-    'what', 'which', 'who', 'how', 'when', 'why', 'sir', 'yes', 'no', 'okay',
-    'ok', 'sure', 'fine', 'ready', 'booking', 'budget', 'bhk', 'sqft', 'sqyd',
-    'size', 'amenities', 'road', 'sector', 'highway', 'park', 'pool', 'gym',
-    'help', 'assist', 'know', 'much', 'like', 'schedule', 'book'
-  ]);
-
-  let hinglishCount = 0;
-  let englishCount = 0;
-
-  for (const w of words) {
-    if (distinctHinglishTokens.has(w)) hinglishCount++;
-    if (commonEnglishWords.has(w)) englishCount++;
+  // 2. Explicit Language Directive from User (e.g. "talk in english", "hindi me batao")
+  if (
+    /^(please\s+)?(speak|talk|write|reply|converse)\s+in\s+english\b/i.test(rawLower) ||
+    /^(please\s+)?(in\s+english|english\s+please|english\s+plz)\b/i.test(rawLower) ||
+    /\b(english\s*(me|mein)\s*(batao|bolo|karo|bataiye|samjhao))\b/i.test(rawLower)
+  ) {
+    return 'english';
   }
-
-  // Only classify as Hinglish if distinct Hinglish tokens are present and outnumber/equal English
-  if (hinglishCount > 0 && hinglishCount >= englishCount) {
+  if (
+    /^(please\s+)?(speak|talk|write|reply|converse)\s+in\s+(hindi|hinglish)\b/i.test(rawLower) ||
+    /^(please\s+)?(in\s+(hindi|hinglish)|(hindi|hinglish)\s+please|(hindi|hinglish)\s+plz)\b/i.test(rawLower) ||
+    /\b((hindi|hinglish)\s*(me|mein)\s*(batao|bolo|karo|bataiye|samjhao))\b/i.test(rawLower)
+  ) {
     return 'hinglish';
   }
 
-  // Default strictly to English
-  return 'english';
+  // 3. Check for Definitive Hinglish Phrases & Tokens
+  if (HINGLISH_PHRASES_REGEX.test(rawLower)) {
+    return 'hinglish';
+  }
+
+  const words = rawLower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    if (typeof context === 'string') return context;
+    if (context && context.preferredLanguage) return context.preferredLanguage;
+    return 'hinglish';
+  }
+
+  let hinglishCount = 0;
+  let definiteEnglishCount = 0;
+
+  for (const w of words) {
+    if (DISTINCT_HINGLISH_TOKENS.has(w)) hinglishCount++;
+    if (DEFINITE_ENGLISH_WORDS.has(w)) definiteEnglishCount++;
+  }
+
+  // If ANY distinct Hinglish token is present (e.g. "isme", "bhi", "batao", "hai", "kr")
+  if (hinglishCount > 0 && hinglishCount >= definiteEnglishCount) {
+    return 'hinglish';
+  }
+
+  // 4. Check for Definitive English Sentence Grammar
+  const hasDefiniteEnglishPhrase = DEFINITE_ENGLISH_PHRASES_REGEX.test(rawLower);
+  if (hasDefiniteEnglishPhrase || definiteEnglishCount >= 2) {
+    return 'english';
+  }
+
+  // 5. Ambiguous / Short / Loan-Word Messages (e.g. "ok", "yes", "send location", "brochure", "site visit", "price")
+  // RESOLVE FROM OLD CHAT / CONVERSATION HISTORY!
+  const preferredLang = typeof context === 'string'
+    ? context
+    : (context && context.preferredLanguage) || null;
+
+  if (preferredLang) {
+    return preferredLang;
+  }
+
+  // Inspect chat history if provided
+  const history = (context && typeof context === 'object' && Array.isArray(context.history)) ? context.history : [];
+  if (history.length > 0) {
+    // Scan previous user messages in reverse to find established language
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg.role === 'user' && msg.content && msg.content.trim()) {
+        const pastLower = msg.content.toLowerCase();
+        if (/[\u0900-\u097F]/.test(pastLower)) return 'hindi';
+        if (HINGLISH_PHRASES_REGEX.test(pastLower)) return 'hinglish';
+        const pastWords = pastLower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
+        if (pastWords.some(w => DISTINCT_HINGLISH_TOKENS.has(w))) return 'hinglish';
+        if (DEFINITE_ENGLISH_PHRASES_REGEX.test(pastLower)) return 'english';
+      }
+    }
+  }
+
+  // Default to Hinglish for Indian WhatsApp audience
+  return 'hinglish';
 }
 
 /**
@@ -534,13 +630,14 @@ export function buildIntelligentRealEstateResponse(
   // 4. Asking about Location / Connectivity
   const isAskingLocation = /location|where|address|kahan|kahape|reach|distance|highway|road/i.test(rawLower);
   if (isAskingLocation && project?.location) {
+    const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${project.name} ${project.location}`.trim())}`;
     if (lang === 'english') {
-      return `*${project.name}* is ideally located at *${project.location}*.\n\nIt offers seamless highway connectivity and access to top schools, healthcare, and markets. Would you like to schedule a site visit this weekend to see the location in person? 🏡`;
+      return `*${project.name}* is ideally located at *${project.location}*.\n\n📍 *Google Maps:* ${mapsLink}\n\nIt offers seamless highway connectivity and quick access to top schools, healthcare, and retail hubs. Would you like to schedule a site visit this weekend to see the location in person? 🏡`;
     }
     if (lang === 'hindi') {
-      return `*${project.name}* प्राइम लोकेशन *${project.location}* पर स्थित है।\n\nयहाँ से मुख्य हाईवे, स्कूल और अस्पतालों की बेहतरीन कनेक्टिविटी है। क्या हम इस सप्ताहांत पर आपका साइट विजिट प्लान करें? 🏡`;
+      return `*${project.name}* प्राइम लोकेशन *${project.location}* पर स्थित है।\n\n📍 *गूगल मैप्स लिंक:* ${mapsLink}\n\nयहाँ से मुख्य हाईवे, स्कूल और अस्पतालों की बेहतरीन कनेक्टिविटी है। क्या हम इस सप्ताहांत पर आपका साइट विजिट प्लान करें? 🏡`;
     }
-    return `*${project.name}* prime location par situated hai — *${project.location}*.\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
+    return `*${project.name}* prime location par situated hai — *${project.location}*.\n\n📍 *Google Maps Link:* ${mapsLink}\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
   }
 
   // 5. Asking about Amenities / Facilities

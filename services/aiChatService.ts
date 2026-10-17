@@ -82,7 +82,7 @@ export function isSiteVisitIntent(text: string): boolean {
   return siteKeywords.some(kw => lower.includes(kw));
 }
 
-export type MediaRequestType = 'images' | 'videos' | 'map' | 'brochure' | null;
+export type MediaRequestType = 'images' | 'videos' | 'map' | 'brochure' | 'location' | null;
 
 export function detectMediaRequest(text: string): MediaRequestType {
   if (!text) return null;
@@ -93,17 +93,22 @@ export function detectMediaRequest(text: string): MediaRequestType {
     return 'videos';
   }
 
-  // 2. Map / Master plan / Layout
+  // 2. Location Request (send location, location bhejo, location share karo, location link, location map)
+  if (/(location\s*(bhejo|bhej|send|share|dikhao|btao|de\s*do|link|map)|(send|share|give)\s*(me\s*)?location|location\s*chahiye|exact\s*location\s*batao)/i.test(lower)) {
+    return 'location';
+  }
+
+  // 3. Map / Master plan / Layout
   if (/(map|layout|master plan|site plan|location map|naksha|masterplan|नक्शा|मैप|मास्टर प्लान|लेआउट)/i.test(lower)) {
     return 'map';
   }
 
-  // 3. Brochure / PDF Document
+  // 4. Brochure / PDF Document
   if (/(brochure|brochur|broucher|brocher|pdf|document|e-brochure|ब्रोशर|पीडीएफ)/i.test(lower)) {
     return 'brochure';
   }
 
-  // 4. Images / Photos
+  // 5. Images / Photos
   if (/(photo|photos|image|images|picture|pictures|pic|pics|tasveer|tasveerein|फोटो|तस्वीर|तस्वीरें)/i.test(lower)) {
     return 'images';
   }
@@ -296,13 +301,41 @@ export async function buildMessages(
   currentMessage: string,
   contextNote?: string
 ): Promise<LLMMessage[]> {
-  const detectedLang = detectLanguage(currentMessage);
-
-  const [projectFacts, dynamicPortfolio, leadDoc] = await Promise.all([
+  // Fetch recent conversation history, state, lead doc, and project facts in parallel
+  const [projectFacts, dynamicPortfolio, leadDoc, convState, historyDocs] = await Promise.all([
     getProjectFacts(projectId, currentMessage),
     getDynamicPortfolioCatalogue(projectId),
     Lead.findById(leadId).lean(),
+    ConversationState.findOne({ leadId }).select('preferredLanguage').lean(),
+    ConversationMessage.find({ leadId })
+      .sort({ createdAt: -1 })
+      .limit(AI_HISTORY_MESSAGES)
+      .lean(),
   ]);
+
+  historyDocs.reverse();
+
+  // Deduplicate consecutive identical messages & filter looping template promises
+  const sanitizedHistory: LLMMessage[] = [];
+  for (const doc of historyDocs) {
+    const last = sanitizedHistory[sanitizedHistory.length - 1];
+    if (last && last.role === doc.role && last.content.trim().toLowerCase() === doc.content.trim().toLowerCase()) {
+      continue;
+    }
+    if (doc.role === 'assistant' && /^sure,?\s*(i\s*can\s*send|we\s*can\s*send)/i.test(doc.content.trim())) {
+      continue;
+    }
+    sanitizedHistory.push({
+      role: doc.role as 'user' | 'assistant',
+      content: doc.content,
+    });
+  }
+
+  // Detect language with full conversation history & state continuity
+  const detectedLang = detectLanguage(currentMessage, {
+    history: sanitizedHistory,
+    preferredLanguage: convState?.preferredLanguage || null,
+  });
 
   let formName = leadDoc?.formName || '';
   if (!formName && leadDoc?.formId) {
@@ -332,13 +365,24 @@ Your mission is to provide deeply satisfying, accurate, conversational, and dire
    - Never evade the question, and never recite introductory boilerplate before answering what they asked.
    - Use the PRIMARY PROPERTY database facts below for all numbers, prices, sizes, amenities, and dates.
 
-2. 🗣️ LANGUAGE & NATURAL CONVERSATIONAL TONE:
-   - Current Detected Mode: [ ${detectedLang.toUpperCase()} ]
-   - Match the user's natural language and tone effortlessly:
-     * ENGLISH: Reply in fluent, polished, natural professional English.
-     * HINGLISH: Reply in warm, natural everyday Hinglish (e.g., "Ji haan, project prime location par situated hai aur 24/7 gated security ke sath aata hai...").
-     * HINDI: Reply in respectful, clear Hindi.
-   - Speak naturally like an experienced human property consultant, NOT a robotic script or IVR.
+2. 🗣️ MANDATORY STRICT LANGUAGE POLICY (ZERO TOLERANCE FOR LANGUAGE FLIPPING):
+   - Current Locked Language Mode: [ *** ${detectedLang.toUpperCase()} *** ]
+${
+  detectedLang === 'hinglish'
+    ? `   * 🔴 STRICT HINGLISH INSTRUCTION:
+     - The user is communicating in HINGLISH. You MUST reply 100% in warm, natural everyday HINGLISH (Roman Hindi with English alphabet, e.g. "Ji haan, project prime location par situated hai aur 24/7 security ke sath aata hai...").
+     - NEVER, UNDER ANY CIRCUMSTANCES, REPLY IN FULL ENGLISH!
+     - Even if the user says short English words or loanwords like "ok", "yes", "sure", "location", "send location", "price", "brochure", "site visit", or "call me", you MUST REMAIN 100% IN HINGLISH!
+     - Translate all database facts (even if provided in English below) into natural, respectful Hinglish.
+     - Example Hinglish tone: "Yeh project prime location par situated hai aur yahan 24/7 security, clubhouse aur swimming pool jaisi top amenities milti hain. Kya hum is weekend par aapka sample flat visit plan karein?"`
+    : detectedLang === 'english'
+    ? `   * 🔵 STRICT PROFESSIONAL ENGLISH INSTRUCTION:
+     - The user is communicating in ENGLISH. You MUST reply 100% in fluent, polished, elite professional English.
+     - NEVER use Hindi or Hinglish words (NO "ji", "haan", "bhai", "aap", "karein", "hain", etc.).
+     - Maintain the standard of a premier international property advisory consultant.`
+    : `   * 🟢 STRICT HINDI (DEVANAGARI) INSTRUCTION:
+     - The user is communicating in HINDI. You MUST reply 100% in respectful, clear Hindi Devanagari script.`
+}
 
 3. 📋 DELIVERING PROPERTY DETAILS / OVERVIEW / "BHEJO":
    - If the user asks for property details, brochure, overview, or says "send details" / "details bhejo" / "bhejo" / "give details" / "tell me more", IMMEDIATELY provide the complete structured facts right in this reply using clean WhatsApp bullet points:
@@ -380,30 +424,6 @@ PROSPECTIVE BUYER CONTEXT:
 ${extraFieldsSummary ? `• Additional Form Details: ${extraFieldsSummary}` : ''}
 ${contextNote ? `• Action Context / Factual Hint: ${contextNote}` : ''}`;
 
-  // Fetch recent conversation history
-  const historyDocs = await ConversationMessage.find({ leadId })
-    .sort({ createdAt: -1 })
-    .limit(AI_HISTORY_MESSAGES)
-    .lean();
-
-  historyDocs.reverse();
-
-  // Deduplicate consecutive identical messages & filter looping template promises
-  const sanitizedHistory: LLMMessage[] = [];
-  for (const doc of historyDocs) {
-    const last = sanitizedHistory[sanitizedHistory.length - 1];
-    if (last && last.role === doc.role && last.content.trim().toLowerCase() === doc.content.trim().toLowerCase()) {
-      continue;
-    }
-    if (doc.role === 'assistant' && /^sure,?\s*(i\s*can\s*send|we\s*can\s*send)/i.test(doc.content.trim())) {
-      continue;
-    }
-    sanitizedHistory.push({
-      role: doc.role as 'user' | 'assistant',
-      content: doc.content,
-    });
-  }
-
   const messages: LLMMessage[] = [{ role: 'system', content: systemPrompt }];
   messages.push(...sanitizedHistory);
   messages.push({ role: 'user', content: currentMessage });
@@ -421,8 +441,16 @@ export async function generateReply(
   projectId: Types.ObjectId,
   contextNote?: string
 ): Promise<{ reply: string; needsAgent: boolean; aiPaused: boolean }> {
-  // 1. Detect language immediately for 100% strict adherence
-  const lang = detectLanguage(text);
+  // 1. Retrieve conversation history & state to ensure strict language continuity
+  const [convState, recentMessages] = await Promise.all([
+    ConversationState.findOne({ $or: [{ leadId: lead._id }, { phone }] }).select('preferredLanguage').lean(),
+    ConversationMessage.find({ $or: [{ leadId: lead._id }, { phone }] }).sort({ createdAt: -1 }).limit(10).lean(),
+  ]);
+
+  const lang = detectLanguage(text, {
+    history: recentMessages ? (recentMessages.reverse() as any) : [],
+    preferredLanguage: convState?.preferredLanguage || null,
+  });
 
   // 2. Extract and profile lead preferences (budget, unit, timeline, purpose) from message
   const profiled = await extractAndSaveLeadPreferences(lead._id, text).catch(() => ({}));
@@ -434,6 +462,7 @@ export async function generateReply(
   }
 
   // 3. Context & Background Action Placeholders (Side-effects run in background without overriding LLM)
+  let sharedLocationNote = '';
   let siteVisitNote = '';
   let mediaNote = '';
   let handoffNote = '';
@@ -444,6 +473,13 @@ export async function generateReply(
   let needsAgent = false;
   let aiPaused = false;
   let detectedIntent = 'general_ai_dialogue';
+
+  // ── S. SHARED LOCATION PIN DETECTION (Customer sends location on WhatsApp) ──
+  if (/\[Shared (?:Live )?Location:/i.test(text)) {
+    detectedIntent = 'shared_location';
+    sharedLocationNote = `USER ACTION COMPLETED: The customer has shared their pinned or live location on WhatsApp (${text}).
+INSTRUCTION FOR AI: Thank the customer warmly for sharing their location. Let them know our property advisory team at Bhole Baba Investments has received it. Clearly explain the route and accessibility to our project "${projectDoc?.name || 'our project'}" located at "${projectDoc?.location || 'our site'}", and consultatively offer to schedule a private sample flat site visit this weekend. Keep your response strictly grounded in [ ${lang.toUpperCase()} ].`;
+  }
 
   // ── A. SITE VISIT DETECTION & ENGINE ──
   if (isSiteVisitIntent(text)) {
@@ -545,14 +581,18 @@ INSTRUCTION FOR AI: Dynamically mention the video walkthrough sent above and con
         mediaNote = `NOTE: The buyer requested a video walkthrough for "${projectDoc.name}".
 INSTRUCTION FOR AI: Inform them politely that our team will share the video walkthrough link shortly on WhatsApp, and ask if they would like to plan a personal site tour.`;
       }
-    } else if (mediaReq === 'map') {
+    } else if (mediaReq === 'map' || mediaReq === 'location') {
+      const mapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${projectDoc.name} ${projectDoc.location || ''}`.trim())}`;
       if (projectDoc.map && projectDoc.map.trim()) {
-        sendMedia(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`).catch(() => {});
-        mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the approved master plan and layout map for "${projectDoc.name}" to their WhatsApp.
-INSTRUCTION FOR AI: Dynamically mention the layout map sent above, and consultatively ask which plot size or configuration best matches their requirements.`;
+        const isUrlLink = projectDoc.map.startsWith('http') && (projectDoc.map.includes('maps.google') || projectDoc.map.includes('goo.gl') || projectDoc.map.includes('maps.app'));
+        if (!isUrlLink) {
+          sendMedia(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`).catch(() => {});
+        }
+        mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the location & layout map for "${projectDoc.name}". Exact location is "${projectDoc.location || 'prime area'}" with Google Maps link: ${mapsSearchUrl}.
+INSTRUCTION FOR AI: Dynamically acknowledge the location and layout map shared, provide the Google Maps navigation link (${mapsSearchUrl}), and consultatively ask which unit or plot size they would like to explore or if they'd like to plan a site visit.`;
       } else {
-        mediaNote = `NOTE: The buyer requested the layout map for "${projectDoc.name}".
-INSTRUCTION FOR AI: Inform them that our team will share the layout map shortly on WhatsApp, and ask which plot size or unit they are interested in.`;
+        mediaNote = `SYSTEM ACTION COMPLETED: Project location is at "${projectDoc.location || 'prime area'}" with Google Maps link: ${mapsSearchUrl}.
+INSTRUCTION FOR AI: Clearly provide the exact location address and the Google Maps navigation link (${mapsSearchUrl}) right in your response, and consultatively invite them to schedule a personal site visit this weekend.`;
       }
     } else if (mediaReq === 'brochure') {
       if (projectDoc.brochure && projectDoc.brochure.trim()) {
@@ -674,6 +714,7 @@ INSTRUCTION FOR AI: Warmly welcome them to Bhole Baba Investments, introduce you
   // ── 5. ASSEMBLE COMPLETE CONTEXT NOTES ──
   const contextParts: string[] = [];
   if (contextNote) contextParts.push(contextNote);
+  if (sharedLocationNote) contextParts.push(sharedLocationNote);
   if (projectSelectionNote) contextParts.push(projectSelectionNote);
   if (siteVisitNote) contextParts.push(siteVisitNote);
   if (mediaNote) contextParts.push(mediaNote);
@@ -711,6 +752,7 @@ INSTRUCTION FOR AI: Warmly welcome them to Bhole Baba Investments, introduce you
         lastMessageAt: new Date(),
         lastActiveAt: new Date(),
         activeProjectId: targetProjectId,
+        preferredLanguage: lang,
         needsAgent,
         aiPaused,
       },

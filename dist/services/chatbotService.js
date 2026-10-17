@@ -362,7 +362,7 @@ async function handleUserInteraction(phone, text, lead) {
                     state.completedAt = new Date();
                     await state.save();
                     console.log(`[Chatbot] 🎉 Lead ${phone} completed all BotFlow questions! Interest: ${interest.toUpperCase()}`);
-                    const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+                    const lang = (0, projectKnowledgeService_1.detectLanguage)(text, { preferredLanguage: state?.preferredLanguage });
                     const completionMsg = (lang === 'english')
                         ? `Thank you! We've noted your preferences. Our property advisory team at *Bhole Baba Investments* will connect with you shortly.\n\nIn the meantime, feel free to ask any questions about *${project?.name || 'our properties'}* (pricing, exact location, site visits, or brochure) — I'm right here to help! 🏡`
                         : `Thanks! Humne aapki preference note kar li hai — *Bhole Baba Investments* ki team aapse connect karegi.\n\nIs dauran aap *${project?.name || 'hamari properties'}* ke baare mein kuch bhi pooch sakte hain (pricing, location, sample flat visit) — Main yahin hoon! 🏡`;
@@ -412,7 +412,7 @@ async function handleUserInteraction(phone, text, lead) {
         catch (err) {
             console.error('[Chatbot] ❌ Error generating LLM reply:', err?.message || err);
             await (0, baileysService_1.sendTyping)(phone, 'paused');
-            const lang = (0, projectKnowledgeService_1.detectLanguage)(text);
+            const lang = (0, projectKnowledgeService_1.detectLanguage)(text, { preferredLanguage: state?.preferredLanguage });
             const smartFallback = (0, projectKnowledgeService_1.buildIntelligentRealEstateResponse)(project, text, lang, activeProjects);
             await (0, baileysService_1.sendText)(phone, smartFallback);
         }

@@ -263,13 +263,25 @@ export async function extractAndSaveLeadPreferences(leadId: Types.ObjectId, text
       updates['extraFields.purpose'] = 'Investment / Rental Return';
     }
 
-    // ── 5. Location / Landmark Mention ───────────────────────────
-    const sectorMatch = raw.match(/sector[-\s]*\d+[a-z]?/i);
-    if (sectorMatch) {
-      updates['extraFields.preferredLocation'] = sectorMatch[0].toUpperCase();
-    } else if (/expressway|highway|metro|golf course/i.test(lower)) {
-      const match = lower.match(/(?:near|on)?\s*(expressway|highway|metro|golf course)/i);
-      if (match) updates['extraFields.preferredLocation'] = match[0].trim();
+    // ── 5. Location / Landmark / Shared Location Pin ─────────────
+    if (/\[Shared (?:Live )?Location:/i.test(raw)) {
+      updates['extraFields.sharedLocation'] = raw;
+      const mapsMatch = raw.match(/https:\/\/maps\.google\.com\/\?q=[^\s\)]+/);
+      if (mapsMatch) {
+        updates['extraFields.sharedLocationUrl'] = mapsMatch[0];
+      }
+      const placeMatch = raw.match(/Shared Location:\s*([^-\(]+)/i);
+      if (placeMatch && placeMatch[1]?.trim()) {
+        updates['extraFields.preferredLocation'] = placeMatch[1].trim();
+      }
+    } else {
+      const sectorMatch = raw.match(/sector[-\s]*\d+[a-z]?/i);
+      if (sectorMatch) {
+        updates['extraFields.preferredLocation'] = sectorMatch[0].toUpperCase();
+      } else if (/expressway|highway|metro|golf course/i.test(lower)) {
+        const match = lower.match(/(?:near|on)?\s*(expressway|highway|metro|golf course)/i);
+        if (match) updates['extraFields.preferredLocation'] = match[0].trim();
+      }
     }
 
     if (Object.keys(updates).length > 0) {

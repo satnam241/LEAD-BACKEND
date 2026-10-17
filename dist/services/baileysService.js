@@ -49,6 +49,7 @@ exports.sendText = sendText;
 exports.sendTyping = sendTyping;
 exports.sendInteractiveButtons = sendInteractiveButtons;
 exports.sendMedia = sendMedia;
+exports.sendLocation = sendLocation;
 exports.resetWhatsAppSession = resetWhatsAppSession;
 const baileys_1 = __importStar(require("@whiskeysockets/baileys"));
 const pino_1 = __importDefault(require("pino"));
@@ -112,7 +113,27 @@ function extractMessageText(message) {
                 interactiveReply = m.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson;
             }
         }
-        const raw = interactiveReply ||
+        // Support incoming location and live location messages
+        let locationText;
+        if (m.locationMessage) {
+            const lat = m.locationMessage.degreesLatitude;
+            const lng = m.locationMessage.degreesLongitude;
+            const name = m.locationMessage.name ? String(m.locationMessage.name).trim() : '';
+            const address = m.locationMessage.address ? String(m.locationMessage.address).trim() : '';
+            const url = m.locationMessage.url ? String(m.locationMessage.url).trim() : '';
+            const mapsUrl = url || (lat != null && lng != null ? `https://maps.google.com/?q=${lat},${lng}` : '');
+            const details = [name, address].filter(Boolean).join(', ');
+            locationText = `📍 [Shared Location: ${details ? `${details} ` : ''}${mapsUrl ? `(${mapsUrl})` : ''} - Lat: ${lat}, Lng: ${lng}]`.trim();
+        }
+        else if (m.liveLocationMessage) {
+            const lat = m.liveLocationMessage.degreesLatitude;
+            const lng = m.liveLocationMessage.degreesLongitude;
+            const caption = m.liveLocationMessage.caption ? String(m.liveLocationMessage.caption).trim() : '';
+            const mapsUrl = (lat != null && lng != null) ? `https://maps.google.com/?q=${lat},${lng}` : '';
+            locationText = `📍 [Shared Live Location: ${caption ? `${caption} ` : ''}${mapsUrl ? `(${mapsUrl})` : ''} - Lat: ${lat}, Lng: ${lng}]`.trim();
+        }
+        const raw = locationText ||
+            interactiveReply ||
             m.conversation ||
             m.extendedTextMessage?.text ||
             m.buttonsResponseMessage?.selectedDisplayText ||
@@ -563,6 +584,37 @@ async function sendMedia(phone, mediaUrl, caption) {
     catch (err) {
         const errMsg = err.message;
         console.error(`[Baileys] ❌ Failed to send media to ${jid}:`, errMsg);
+        return { success: false, error: errMsg };
+    }
+}
+async function sendLocation(phone, latitude, longitude, name, address) {
+    if (!sock || connectionStatus !== 'open') {
+        return {
+            success: false,
+            error: `WhatsApp is not connected (status: ${connectionStatus}). Please scan the QR code to connect.`,
+        };
+    }
+    const jid = toJid(phone);
+    if (!jid) {
+        return { success: false, error: 'Invalid recipient phone number' };
+    }
+    try {
+        console.log(`[Baileys] 📍 Sending location pin to ${jid}: (${latitude}, ${longitude}) - ${name || ''}...`);
+        const result = await sock.sendMessage(jid, {
+            location: {
+                degreesLatitude: latitude,
+                degreesLongitude: longitude,
+                name: name ? name.trim() : undefined,
+                address: address ? address.trim() : undefined,
+            },
+        });
+        const waMessageId = result?.key?.id ?? undefined;
+        console.log(`[Baileys] ✅ Location pin sent to ${jid} (ID: ${waMessageId})`);
+        return { success: true, waMessageId };
+    }
+    catch (err) {
+        const errMsg = err.message;
+        console.error(`[Baileys] ❌ Failed to send location to ${jid}:`, errMsg);
         return { success: false, error: errMsg };
     }
 }

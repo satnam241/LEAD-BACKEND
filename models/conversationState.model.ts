@@ -19,6 +19,7 @@ export interface ConversationStateDoc extends Document {
   lastMessageAt?: Date;
   activeProjectId?: Types.ObjectId | null;
   pendingProjectSwitchId?: Types.ObjectId | null;
+  preferredLanguage?: 'english' | 'hinglish' | 'hindi';
   aiPaused?: boolean;
   needsAgent?: boolean;
   startedAt: Date;
@@ -54,6 +55,11 @@ const conversationStateSchema = new Schema<ConversationStateDoc>(
     lastMessageAt: { type: Date, default: null },
     activeProjectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     pendingProjectSwitchId: { type: Schema.Types.ObjectId, ref: 'Project', default: null },
+    preferredLanguage: {
+      type: String,
+      enum: ['english', 'hinglish', 'hindi'],
+      default: null,
+    },
     aiPaused: { type: Boolean, default: false },
     needsAgent: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },

@@ -22,6 +22,11 @@ const conversationStateSchema = new mongoose_1.Schema({
     lastMessageAt: { type: Date, default: null },
     activeProjectId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     pendingProjectSwitchId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Project', default: null },
+    preferredLanguage: {
+        type: String,
+        enum: ['english', 'hinglish', 'hindi'],
+        default: null,
+    },
     aiPaused: { type: Boolean, default: false },
     needsAgent: { type: Boolean, default: false },
     startedAt: { type: Date, default: Date.now },
