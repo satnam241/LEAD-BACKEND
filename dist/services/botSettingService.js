@@ -20,7 +20,7 @@ async function getGlobalWelcomeMessage() {
         }
     }
     catch (err) {
-        console.error('[BotSetting] ❌ Error getting global welcome message:', err?.message || err);
+        console.error('[BotSetting] âŒ Error getting global welcome message:', err?.message || err);
     }
     return '';
 }
@@ -38,12 +38,12 @@ async function setGlobalWelcomeMessage(message) {
         }, { upsert: true, new: true });
         // Also sync to all projects so any project-level query also has it
         if (trimmed) {
-            await project_model_1.default.updateMany({}, { $set: { welcomeMessage: trimmed } }).catch(() => { });
+            await project_model_1.default.updateMany({ $or: [{ welcomeMessage: { $exists: false } }, { welcomeMessage: '' }, { welcomeMessage: null }] }, { $set: { welcomeMessage: trimmed } }).catch(() => { });
         }
-        console.log(`[BotSetting] ✅ Universal welcome message saved successfully (${trimmed.length} chars)`);
+        console.log(`[BotSetting] âœ… Universal welcome message saved successfully (${trimmed.length} chars)`);
     }
     catch (err) {
-        console.error('[BotSetting] ❌ Error saving global welcome message:', err?.message || err);
+        console.error('[BotSetting] âŒ Error saving global welcome message:', err?.message || err);
         throw err;
     }
 }

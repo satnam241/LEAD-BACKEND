@@ -27,6 +27,8 @@ async function getProjectFacts(projectId, userMessage) {
         lines.push(`DEVELOPER: ${project.developer}`);
     if (project.location)
         lines.push(`LOCATION: ${project.location}`);
+    if (project.locationUrl)
+        lines.push(`LOCATION MAP LINK: ${project.locationUrl}`);
     if (project.priceRange)
         lines.push(`PRICE RANGE: ${project.priceRange}`);
     if (project.possession)
@@ -167,7 +169,7 @@ function detectLanguage(text, context) {
             return context;
         if (context && context.preferredLanguage)
             return context.preferredLanguage;
-        return 'hinglish';
+        return 'english';
     }
     // 1. Pure Hindi Devanagari script (Unicode range 0900-097F)
     if (/[\u0900-\u097F]/.test(text)) {
@@ -185,7 +187,16 @@ function detectLanguage(text, context) {
         /\b((hindi|hinglish)\s*(me|mein)\s*(batao|bolo|karo|bataiye|samjhao))\b/i.test(rawLower)) {
         return 'hinglish';
     }
-    // 3. Check for Definitive Hinglish Phrases & Tokens
+    // 3. Opening Greetings Check — First greeting is ALWAYS in English
+    if (/^(hello|hi|hey|hii|helo|hlo|namaste|good\s+morning|good\s+afternoon|good\s+evening|greetings|start)(\s+(sir|ji|mam|team|bro|bhaiya|bhai))?$/i.test(rawLower)) {
+        const preferredLang = typeof context === 'string'
+            ? context
+            : (context && context.preferredLanguage) || null;
+        if (preferredLang)
+            return preferredLang;
+        return 'english';
+    }
+    // 4. Check for Definitive Hinglish Phrases & Tokens
     if (HINGLISH_PHRASES_REGEX.test(rawLower)) {
         return 'hinglish';
     }
@@ -195,7 +206,7 @@ function detectLanguage(text, context) {
             return context;
         if (context && context.preferredLanguage)
             return context.preferredLanguage;
-        return 'hinglish';
+        return 'english';
     }
     let hinglishCount = 0;
     let definiteEnglishCount = 0;
@@ -209,9 +220,9 @@ function detectLanguage(text, context) {
     if (hinglishCount > 0 && hinglishCount >= definiteEnglishCount) {
         return 'hinglish';
     }
-    // 4. Check for Definitive English Sentence Grammar
+    // 5. Check for Definitive English Sentence Grammar
     const hasDefiniteEnglishPhrase = DEFINITE_ENGLISH_PHRASES_REGEX.test(rawLower);
-    if (hasDefiniteEnglishPhrase || definiteEnglishCount >= 2) {
+    if (hasDefiniteEnglishPhrase || (definiteEnglishCount >= 1 && hinglishCount === 0)) {
         return 'english';
     }
     // 5. Ambiguous / Short / Loan-Word Messages (e.g. "ok", "yes", "send location", "brochure", "site visit", "price")
@@ -242,23 +253,23 @@ function detectLanguage(text, context) {
             }
         }
     }
-    // Default to Hinglish for Indian WhatsApp audience
-    return 'hinglish';
+    // Default to English! First message always in English!
+    return 'english';
 }
 /**
  * Matches user query against trained FAQs, keywords, and core project attributes
  * Returns exact verified answer if match confidence is high, or null.
- * Mirrors user language: English ➔ English, Hinglish ➔ Hinglish, Hindi ➔ Hindi.
+ * Mirrors user language: English âž” English, Hinglish âž” Hinglish, Hindi âž” Hindi.
  */
 function findDirectFaqAnswer(project, userMessage) {
     if (!project || !userMessage || !userMessage.trim())
         return null;
     const rawLower = userMessage.toLowerCase().trim();
     const cleanMsg = rawLower.replace(/[^\w\s\u0900-\u097F]/gi, ' ');
-    // ─────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Trained Project FAQs Matcher (Database FAQs Only)
     // Conversational chat & project synthesis are handled dynamically by Gemini AI!
-    // ─────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const STOP_WORDS = new Set([
         'who', 'are', 'you', 'how', 'is', 'am', 'was', 'were', 'the', 'in', 'to', 'for',
         'of', 'and', 'a', 'an', 'at', 'by', 'do', 'does', 'did', 'kya', 'hai', 'hain',
@@ -305,7 +316,7 @@ function findDirectFaqAnswer(project, userMessage) {
     }
     // Require strong confidence (score >= 12)
     if (bestFaq && highestScore >= 12 && bestFaq.answer && bestFaq.answer.trim()) {
-        // 🛡️ Extra Guardrail: If answer contains "35acres" but user did not ask about area/acres, reject it!
+        // ðŸ›¡ï¸ Extra Guardrail: If answer contains "35acres" but user did not ask about area/acres, reject it!
         const is35AcresAnswer = /35\s*acres?|spread\s*over/i.test(bestFaq.answer);
         const askedAboutArea = /acre|acres|spread|total area|land area|master plan/i.test(rawLower);
         if (is35AcresAnswer && !askedAboutArea) {
@@ -358,11 +369,11 @@ async function getDynamicPortfolioCatalogue(excludeProjectId) {
         query._id = { $ne: excludeProjectId };
     }
     let projects = await project_model_1.default.find(query)
-        .select('name location priceRange unitTypes developer summary')
+        .select('name location locationUrl priceRange unitTypes developer summary')
         .lean();
     if (!projects || projects.length === 0) {
         projects = await project_model_1.default.find(excludeProjectId ? { _id: { $ne: excludeProjectId } } : {})
-            .select('name location priceRange unitTypes developer summary')
+            .select('name location locationUrl priceRange unitTypes developer summary')
             .lean();
     }
     if (!projects || projects.length === 0) {
@@ -373,7 +384,8 @@ async function getDynamicPortfolioCatalogue(excludeProjectId) {
         const spaces = (p.unitTypes || [])
             .map(u => `${u.type}${u.sizeSqft ? ` (Space: ${u.sizeSqft})` : ''}${u.priceFrom ? ` (Rate: ${u.priceFrom})` : ''}`)
             .join(', ');
-        lines.push(`• Project: "${p.name}"\n  📍 Location: ${p.location || 'Available on request'}\n  📐 Space/Units: ${spaces || 'Unit space details on request'}\n  💰 Rate/Price Range: ${p.priceRange || 'Available on request'}`);
+        const mapLine = p.locationUrl ? `\n  ðŸ—ºï¸ Map: ${p.locationUrl}` : '';
+        lines.push(`â€¢ Project: "${p.name}"\n  ðŸ“ Location: ${p.location || 'Available on request'}${mapLine}\n  ðŸ“ Space/Units: ${spaces || 'Unit space details on request'}\n  ðŸ’° Rate/Price Range: ${p.priceRange || 'Available on request'}`);
     }
     return lines.join('\n\n');
 }
@@ -409,7 +421,7 @@ function isPropertyDetailsQuery(text) {
         return true;
     }
     // 6. Hindi / Devanagari details queries
-    if (/(डिटेल|जानकारी|प्रॉपर्टी|प्रोजेक्ट)/i.test(lower)) {
+    if (/(à¤¡à¤¿à¤Ÿà¥‡à¤²|à¤œà¤¾à¤¨à¤•à¤¾à¤°à¥€|à¤ªà¥à¤°à¥‰à¤ªà¤°à¥à¤Ÿà¥€|à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿ)/i.test(lower)) {
         return true;
     }
     return false;
@@ -421,60 +433,67 @@ function formatSingleProjectDetails(project, lang) {
     if (!project)
         return '';
     const units = (project.unitTypes || [])
-        .map((u) => `• *${u.type}*${u.sizeSqft ? ` — Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` (From ${u.priceFrom})` : ''}`)
+        .map((u) => `â€¢ *${u.type}*${u.sizeSqft ? ` â€” Space: ${u.sizeSqft}` : ''}${u.priceFrom ? ` (From ${u.priceFrom})` : ''}`)
         .join('\n');
     const amenities = (project.amenities || []).slice(0, 6).join(', ');
+    const mapsLink = project.locationUrl || (project.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${project.name} ${project.location}`.trim())}` : '');
     if (lang === 'english') {
         let reply = `Here are the complete details for *${project.name}*:\n\n`;
         if (project.location)
-            reply += `📍 *Location:* ${project.location}\n`;
+            reply += `ðŸ“ *Location:* ${project.location}\n`;
+        if (mapsLink)
+            reply += `ðŸ—ºï¸ *Google Maps:* ${mapsLink}\n`;
         if (project.priceRange)
-            reply += `💰 *Pricing:* Starting @ ${project.priceRange}\n`;
+            reply += `ðŸ’° *Pricing:* Starting @ ${project.priceRange}\n`;
         if (units)
-            reply += `📐 *Available Units & Sizes:*\n${units}\n`;
+            reply += `ðŸ“ *Available Units & Sizes:*\n${units}\n`;
         if (amenities)
-            reply += `✨ *Key Amenities:* ${amenities}\n`;
+            reply += `âœ¨ *Key Amenities:* ${amenities}\n`;
         if (project.possession)
-            reply += `📅 *Possession:* ${project.possession}\n`;
+            reply += `ðŸ“… *Possession:* ${project.possession}\n`;
         if (project.reraNumber)
-            reply += `🏛️ *RERA:* ${project.reraNumber}\n`;
+            reply += `ðŸ›ï¸ *RERA:* ${project.reraNumber}\n`;
         if (project.summary)
-            reply += `\nℹ️ *Summary:* ${project.summary}\n`;
-        reply += `\nWould you like to schedule a site visit this weekend to see the property in person? 🏡`;
+            reply += `\nâ„¹ï¸ *Summary:* ${project.summary}\n`;
+        reply += `\nWould you like to schedule a site visit this weekend to see the property in person? ðŸ¡`;
         return reply;
     }
     if (lang === 'hindi') {
-        let reply = `*${project.name}* की संपूर्ण जानकारी:\n\n`;
+        let reply = `*${project.name}* à¤•à¥€ à¤¸à¤‚à¤ªà¥‚à¤°à¥à¤£ à¤œà¤¾à¤¨à¤•à¤¾à¤°à¥€:\n\n`;
         if (project.location)
-            reply += `📍 *लोकेशन:* ${project.location}\n`;
+            reply += `ðŸ“ *à¤²à¥‹à¤•à¥‡à¤¶à¤¨:* ${project.location}\n`;
+        if (mapsLink)
+            reply += `ðŸ—ºï¸ *à¤—à¥‚à¤—à¤² à¤®à¥ˆà¤ªà¥à¤¸:* ${mapsLink}\n`;
         if (project.priceRange)
-            reply += `💰 *कीमत:* ${project.priceRange} से शुरू\n`;
+            reply += `ðŸ’° *à¤•à¥€à¤®à¤¤:* ${project.priceRange} à¤¸à¥‡ à¤¶à¥à¤°à¥‚\n`;
         if (units)
-            reply += `📐 *उपलब्ध साइज व यूनिट्स:*\n${units}\n`;
+            reply += `ðŸ“ *à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¸à¤¾à¤‡à¤œ à¤µ à¤¯à¥‚à¤¨à¤¿à¤Ÿà¥à¤¸:*\n${units}\n`;
         if (amenities)
-            reply += `✨ *सुविधाएं:* ${amenities}\n`;
+            reply += `âœ¨ *à¤¸à¥à¤µà¤¿à¤§à¤¾à¤à¤‚:* ${amenities}\n`;
         if (project.possession)
-            reply += `📅 *पजेशन:* ${project.possession}\n`;
+            reply += `ðŸ“… *à¤ªà¤œà¥‡à¤¶à¤¨:* ${project.possession}\n`;
         if (project.reraNumber)
-            reply += `🏛️ *रेरा (RERA):* ${project.reraNumber}\n`;
-        reply += `\nक्या आप इस सप्ताहांत पर प्रॉपर्टी देखने के लिए साइट विजिट शेड्यूल करना चाहेंगे? 🏡`;
+            reply += `ðŸ›ï¸ *à¤°à¥‡à¤°à¤¾ (RERA):* ${project.reraNumber}\n`;
+        reply += `\nà¤•à¥à¤¯à¤¾ à¤†à¤ª à¤‡à¤¸ à¤¸à¤ªà¥à¤¤à¤¾à¤¹à¤¾à¤‚à¤¤ à¤ªà¤° à¤ªà¥à¤°à¥‰à¤ªà¤°à¥à¤Ÿà¥€ à¤¦à¥‡à¤–à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¸à¤¾à¤‡à¤Ÿ à¤µà¤¿à¤œà¤¿à¤Ÿ à¤¶à¥‡à¤¡à¥à¤¯à¥‚à¤² à¤•à¤°à¤¨à¤¾ à¤šà¤¾à¤¹à¥‡à¤‚à¤—à¥‡? ðŸ¡`;
         return reply;
     }
     // Hinglish
     let reply = `Yeh rahi *${project.name}* ki complete property details:\n\n`;
     if (project.location)
-        reply += `📍 *Location:* ${project.location}\n`;
+        reply += `ðŸ“ *Location:* ${project.location}\n`;
+    if (mapsLink)
+        reply += `ðŸ—ºï¸ *Google Maps:* ${mapsLink}\n`;
     if (project.priceRange)
-        reply += `💰 *Pricing:* Starting @ ${project.priceRange}\n`;
+        reply += `ðŸ’° *Pricing:* Starting @ ${project.priceRange}\n`;
     if (units)
-        reply += `📐 *Available Sizes & Units:*\n${units}\n`;
+        reply += `ðŸ“ *Available Sizes & Units:*\n${units}\n`;
     if (amenities)
-        reply += `✨ *Key Amenities:* ${amenities}\n`;
+        reply += `âœ¨ *Key Amenities:* ${amenities}\n`;
     if (project.possession)
-        reply += `📅 *Possession:* ${project.possession}\n`;
+        reply += `ðŸ“… *Possession:* ${project.possession}\n`;
     if (project.reraNumber)
-        reply += `🏛️ *RERA Number:* ${project.reraNumber}\n`;
-    reply += `\nKya hum is weekend par aapka ek sample flat site visit schedule karein taaki aap quality khud dekh sakein? 🏡`;
+        reply += `ðŸ›ï¸ *RERA Number:* ${project.reraNumber}\n`;
+    reply += `\nKya hum is weekend par aapka ek sample flat site visit schedule karein taaki aap quality khud dekh sakein? ðŸ¡`;
     return reply;
 }
 /**
@@ -487,15 +506,15 @@ function formatMultiProjectList(projects, lang) {
         return 'Filhaal database mein koi active project available nahi hai.';
     }
     const items = projects
-        .map((p, idx) => `${idx + 1}. *${p.name}*\n   📍 Location: ${p.location || 'Available on request'}\n   💰 Price: Starting @ ${p.priceRange || 'Available on request'}`)
+        .map((p, idx) => `${idx + 1}. *${p.name}*\n   ðŸ“ Location: ${p.location || 'Available on request'}\n   ðŸ’° Price: Starting @ ${p.priceRange || 'Available on request'}`)
         .join('\n\n');
     if (lang === 'english') {
-        return `We currently have these prime projects available at *Bhole Baba Investments*:\n\n${items}\n\nWhich project would you like to explore details for? Please reply with the *Project Name* or *Number (1, 2...)* 🏡`;
+        return `We currently have these prime projects available at *Bhole Baba Investments*:\n\n${items}\n\nWhich project would you like to explore details for? Please reply with the *Project Name* or *Number (1, 2...)* ðŸ¡`;
     }
     if (lang === 'hindi') {
-        return `*भोले बाबा इन्वेस्टमेंट्स* के पास वर्तमान में ये प्रमुख प्रोजेक्ट्स उपलब्ध हैं:\n\n${items}\n\nआप किस प्रोजेक्ट की पूरी जानकारी देखना चाहते हैं? कृपया प्रोजेक्ट का *नाम* या *नंबर (1, 2...)* लिखकर भेजें 🏡`;
+        return `*à¤­à¥‹à¤²à¥‡ à¤¬à¤¾à¤¬à¤¾ à¤‡à¤¨à¥à¤µà¥‡à¤¸à¥à¤Ÿà¤®à¥‡à¤‚à¤Ÿà¥à¤¸* à¤•à¥‡ à¤ªà¤¾à¤¸ à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤®à¥‡à¤‚ à¤¯à¥‡ à¤ªà¥à¤°à¤®à¥à¤– à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿà¥à¤¸ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆà¤‚:\n\n${items}\n\nà¤†à¤ª à¤•à¤¿à¤¸ à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿ à¤•à¥€ à¤ªà¥‚à¤°à¥€ à¤œà¤¾à¤¨à¤•à¤¾à¤°à¥€ à¤¦à¥‡à¤–à¤¨à¤¾ à¤šà¤¾à¤¹à¤¤à¥‡ à¤¹à¥ˆà¤‚? à¤•à¥ƒà¤ªà¤¯à¤¾ à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿ à¤•à¤¾ *à¤¨à¤¾à¤®* à¤¯à¤¾ *à¤¨à¤‚à¤¬à¤° (1, 2...)* à¤²à¤¿à¤–à¤•à¤° à¤­à¥‡à¤œà¥‡à¤‚ ðŸ¡`;
     }
-    return `Hamare paas *Bhole Baba Investments* ke ye prime projects available hain:\n\n${items}\n\nAap kaun se project ki details dekhna chahte hain? Bas project ka *Naam* ya *Number (1, 2...)* reply kar dein 🏡`;
+    return `Hamare paas *Bhole Baba Investments* ke ye prime projects available hain:\n\n${items}\n\nAap kaun se project ki details dekhna chahte hain? Bas project ka *Naam* ya *Number (1, 2...)* reply kar dein ðŸ¡`;
 }
 /**
  * Checks if user message is selecting a project by number ("1", "2") or name
@@ -557,62 +576,63 @@ function buildIntelligentRealEstateResponse(project, userMessage, lang, activePr
         if (lang === 'english') {
             let r = `The pricing for *${project.name}* starts from *${project.priceRange}*.`;
             if (project.unitTypes && project.unitTypes.length > 0) {
-                const uStr = project.unitTypes.map((u) => `• *${u.type}*: Starting from ${u.priceFrom || 'Best market price'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
+                const uStr = project.unitTypes.map((u) => `â€¢ *${u.type}*: Starting from ${u.priceFrom || 'Best market price'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
                 r += `\n\n${uStr}`;
             }
-            r += `\n\nAre you looking to buy for personal residence (self-use) or investment? 🏡`;
+            r += `\n\nAre you looking to buy for personal residence (self-use) or investment? ðŸ¡`;
             return r;
         }
         if (lang === 'hindi') {
-            let r = `*${project.name}* में कीमतें *${project.priceRange}* से शुरू होती हैं।`;
+            let r = `*${project.name}* à¤®à¥‡à¤‚ à¤•à¥€à¤®à¤¤à¥‡à¤‚ *${project.priceRange}* à¤¸à¥‡ à¤¶à¥à¤°à¥‚ à¤¹à¥‹à¤¤à¥€ à¤¹à¥ˆà¤‚à¥¤`;
             if (project.unitTypes && project.unitTypes.length > 0) {
-                const uStr = project.unitTypes.map((u) => `• *${u.type}*: ${u.priceFrom || 'उचित मूल्य'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
+                const uStr = project.unitTypes.map((u) => `â€¢ *${u.type}*: ${u.priceFrom || 'à¤‰à¤šà¤¿à¤¤ à¤®à¥‚à¤²à¥à¤¯'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
                 r += `\n\n${uStr}`;
             }
-            r += `\n\nक्या आप यह प्रॉपर्टी खुद रहने के लिए देख रहे हैं या निवेश के लिए? 🏡`;
+            r += `\n\nà¤•à¥à¤¯à¤¾ à¤†à¤ª à¤¯à¤¹ à¤ªà¥à¤°à¥‰à¤ªà¤°à¥à¤Ÿà¥€ à¤–à¥à¤¦ à¤°à¤¹à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¦à¥‡à¤– à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚ à¤¯à¤¾ à¤¨à¤¿à¤µà¥‡à¤¶ à¤•à¥‡ à¤²à¤¿à¤? ðŸ¡`;
             return r;
         }
         let r = `*${project.name}* mein price starting *${project.priceRange}* se hai.`;
         if (project.unitTypes && project.unitTypes.length > 0) {
-            const uStr = project.unitTypes.map((u) => `• *${u.type}*: Starting from ${u.priceFrom || 'Best market price'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
+            const uStr = project.unitTypes.map((u) => `â€¢ *${u.type}*: Starting from ${u.priceFrom || 'Best market price'}${u.sizeSqft ? ` (${u.sizeSqft})` : ''}`).join('\n');
             r += `\n\n${uStr}`;
         }
-        r += `\n\nAap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye? 🏡`;
+        r += `\n\nAap is property ko self-use (rehne ke liye) dekh rahe hain ya investment purpose ke liye? ðŸ¡`;
         return r;
     }
     // 4. Asking about Location / Connectivity
     const isAskingLocation = /location|where|address|kahan|kahape|reach|distance|highway|road/i.test(rawLower);
-    if (isAskingLocation && project?.location) {
-        const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${project.name} ${project.location}`.trim())}`;
+    if (isAskingLocation && (project?.location || project?.locationUrl)) {
+        const locText = project.location || project.name;
+        const mapsLink = project.locationUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${project.name} ${locText}`.trim())}`;
         if (lang === 'english') {
-            return `*${project.name}* is ideally located at *${project.location}*.\n\n📍 *Google Maps:* ${mapsLink}\n\nIt offers seamless highway connectivity and quick access to top schools, healthcare, and retail hubs. Would you like to schedule a site visit this weekend to see the location in person? 🏡`;
+            return `*${project.name}* is ideally located at *${locText}*.\n\nðŸ“ *Google Maps:* ${mapsLink}\n\nIt offers seamless highway connectivity and quick access to top schools, healthcare, and retail hubs. Would you like to schedule a site visit this weekend to see the location in person? ðŸ¡`;
         }
         if (lang === 'hindi') {
-            return `*${project.name}* प्राइम लोकेशन *${project.location}* पर स्थित है।\n\n📍 *गूगल मैप्स लिंक:* ${mapsLink}\n\nयहाँ से मुख्य हाईवे, स्कूल और अस्पतालों की बेहतरीन कनेक्टिविटी है। क्या हम इस सप्ताहांत पर आपका साइट विजिट प्लान करें? 🏡`;
+            return `*${project.name}* à¤ªà¥à¤°à¤¾à¤‡à¤® à¤²à¥‹à¤•à¥‡à¤¶à¤¨ *${locText}* à¤ªà¤° à¤¸à¥à¤¥à¤¿à¤¤ à¤¹à¥ˆà¥¤\n\nðŸ“ *à¤—à¥‚à¤—à¤² à¤®à¥ˆà¤ªà¥à¤¸ à¤²à¤¿à¤‚à¤•:* ${mapsLink}\n\nà¤¯à¤¹à¤¾à¤ à¤¸à¥‡ à¤®à¥à¤–à¥à¤¯ à¤¹à¤¾à¤ˆà¤µà¥‡, à¤¸à¥à¤•à¥‚à¤² à¤”à¤° à¤…à¤¸à¥à¤ªà¤¤à¤¾à¤²à¥‹à¤‚ à¤•à¥€ à¤¬à¥‡à¤¹à¤¤à¤°à¥€à¤¨ à¤•à¤¨à¥‡à¤•à¥à¤Ÿà¤¿à¤µà¤¿à¤Ÿà¥€ à¤¹à¥ˆà¥¤ à¤•à¥à¤¯à¤¾ à¤¹à¤® à¤‡à¤¸ à¤¸à¤ªà¥à¤¤à¤¾à¤¹à¤¾à¤‚à¤¤ à¤ªà¤° à¤†à¤ªà¤•à¤¾ à¤¸à¤¾à¤‡à¤Ÿ à¤µà¤¿à¤œà¤¿à¤Ÿ à¤ªà¥à¤²à¤¾à¤¨ à¤•à¤°à¥‡à¤‚? ðŸ¡`;
         }
-        return `*${project.name}* prime location par situated hai — *${project.location}*.\n\n📍 *Google Maps Link:* ${mapsLink}\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek sample flat site visit schedule karein? 🏡`;
+        return `*${project.name}* prime location par situated hai â€” *${locText}*.\n\nðŸ“ *Google Maps Link:* ${mapsLink}\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek sample flat site visit schedule karein? ðŸ¡`;
     }
     // 5. Asking about Amenities / Facilities
     const isAskingAmenities = /amenit|facilit|park|gym|pool|security|road|water|cctv|suvidha/i.test(rawLower);
     if (isAskingAmenities && project?.amenities && project.amenities.length > 0) {
         const aList = project.amenities.slice(0, 8).join(', ');
         if (lang === 'english') {
-            return `*${project.name}* comes equipped with top-tier lifestyle amenities:\n\n✨ ${aList}\n\nWhich configuration (1 BHK, 2 BHK, 3 BHK, or plot) are you looking for? 🏡`;
+            return `*${project.name}* comes equipped with top-tier lifestyle amenities:\n\nâœ¨ ${aList}\n\nWhich configuration (1 BHK, 2 BHK, 3 BHK, or plot) are you looking for? ðŸ¡`;
         }
         if (lang === 'hindi') {
-            return `*${project.name}* में आधुनिक सुविधाएं उपलब्ध हैं:\n\n✨ ${aList}\n\nआपकी प्राथमिकता किस साइज या यूनिट के लिए है? 🏡`;
+            return `*${project.name}* à¤®à¥‡à¤‚ à¤†à¤§à¥à¤¨à¤¿à¤• à¤¸à¥à¤µà¤¿à¤§à¤¾à¤à¤‚ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆà¤‚:\n\nâœ¨ ${aList}\n\nà¤†à¤ªà¤•à¥€ à¤ªà¥à¤°à¤¾à¤¥à¤®à¤¿à¤•à¤¤à¤¾ à¤•à¤¿à¤¸ à¤¸à¤¾à¤‡à¤œ à¤¯à¤¾ à¤¯à¥‚à¤¨à¤¿à¤Ÿ à¤•à¥‡ à¤²à¤¿à¤ à¤¹à¥ˆ? ðŸ¡`;
         }
-        return `*${project.name}* mein world-class amenities provide ki gayi hain:\n\n✨ ${aList}\n\nAap kis size ka flat ya plot prefer kar rahe hain? 🏡`;
+        return `*${project.name}* mein world-class amenities provide ki gayi hain:\n\nâœ¨ ${aList}\n\nAap kis size ka flat ya plot prefer kar rahe hain? ðŸ¡`;
     }
     // 6. Default Consultative Response Grounded in Bhole Baba Investments
     const projName = project?.name || 'our prime properties';
     const priceSnippet = project?.priceRange ? `starting @ ${project.priceRange}` : 'at the best market rates';
     if (lang === 'english') {
-        return `Thank you for reaching out to *Bhole Baba Investments*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a sample flat site visit this weekend? 🏡`;
+        return `Thank you for reaching out to *Bhole Baba Investments*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a sample flat site visit this weekend? ðŸ¡`;
     }
     if (lang === 'hindi') {
-        return `*भोले बाबा इन्वेस्टमेंट्स* में संपर्क करने के लिए धन्यवाद! *${projName}* में हमारे पास ${priceSnippet} बेहतरीन विकल्प उपलब्ध हैं।\n\nक्या आप लोकेशन, यूनिट साइज जानना चाहते हैं या इस सप्ताहांत पर साइट विजिट प्लान करना चाहेंगे? 🏡`;
+        return `*à¤­à¥‹à¤²à¥‡ à¤¬à¤¾à¤¬à¤¾ à¤‡à¤¨à¥à¤µà¥‡à¤¸à¥à¤Ÿà¤®à¥‡à¤‚à¤Ÿà¥à¤¸* à¤®à¥‡à¤‚ à¤¸à¤‚à¤ªà¤°à¥à¤• à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤§à¤¨à¥à¤¯à¤µà¤¾à¤¦! *${projName}* à¤®à¥‡à¤‚ à¤¹à¤®à¤¾à¤°à¥‡ à¤ªà¤¾à¤¸ ${priceSnippet} à¤¬à¥‡à¤¹à¤¤à¤°à¥€à¤¨ à¤µà¤¿à¤•à¤²à¥à¤ª à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆà¤‚à¥¤\n\nà¤•à¥à¤¯à¤¾ à¤†à¤ª à¤²à¥‹à¤•à¥‡à¤¶à¤¨, à¤¯à¥‚à¤¨à¤¿à¤Ÿ à¤¸à¤¾à¤‡à¤œ à¤œà¤¾à¤¨à¤¨à¤¾ à¤šà¤¾à¤¹à¤¤à¥‡ à¤¹à¥ˆà¤‚ à¤¯à¤¾ à¤‡à¤¸ à¤¸à¤ªà¥à¤¤à¤¾à¤¹à¤¾à¤‚à¤¤ à¤ªà¤° à¤¸à¤¾à¤‡à¤Ÿ à¤µà¤¿à¤œà¤¿à¤Ÿ à¤ªà¥à¤²à¤¾à¤¨ à¤•à¤°à¤¨à¤¾ à¤šà¤¾à¤¹à¥‡à¤‚à¤—à¥‡? ðŸ¡`;
     }
-    return `*Bhole Baba Investments* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek sample flat site visit schedule karein? 🏡`;
+    return `*Bhole Baba Investments* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek sample flat site visit schedule karein? ðŸ¡`;
 }
 //# sourceMappingURL=projectKnowledgeService.js.map

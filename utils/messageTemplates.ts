@@ -1,4 +1,5 @@
 // utils/messageTemplates.ts
+import mongoose from 'mongoose';
 
 export const getDefaultMessage = (leadName?: string): string => {
   return `Hi ${leadName || "there"}, 👋
@@ -37,25 +38,40 @@ export const getResolvedDefaultMessage = async (lead?: any): Promise<string> => 
   try {
     const leadName = lead?.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
 
-    // 1. Highest Priority: Universal First Message configured by Admin for ALL leads
+    // Resolve project details if available
+    let projectDoc: any = lead?.project || lead?.projectId;
+    if (projectDoc && (typeof projectDoc === 'string' || projectDoc instanceof mongoose.Types.ObjectId)) {
+      const Project = (await import('../models/project.model')).default;
+      projectDoc = await Project.findById(projectDoc).select('name location priceRange welcomeMessage').lean();
+    }
+    const projName = projectDoc?.name || 'our prime properties';
+    const projLocation = projectDoc?.location || '';
+    const projPrice = projectDoc?.priceRange || '';
+
+    // 1. Highest Priority: Project-specific welcome message if configured by Admin
+    if (projectDoc?.welcomeMessage && projectDoc.welcomeMessage.trim()) {
+      return projectDoc.welcomeMessage.trim()
+        .replace(/{{name}}/gi, leadName || 'there')
+        .replace(/{{leadName}}/gi, leadName || 'there')
+        .replace(/{{project}}/gi, projName)
+        .replace(/{{projectName}}/gi, projName)
+        .replace(/{{location}}/gi, projLocation)
+        .replace(/{{price}}/gi, projPrice)
+        .trim();
+    }
+
+    // 2. Second Priority: Universal First Message configured by Admin for ALL leads
     const { getGlobalWelcomeMessage } = await import('../services/botSettingService');
     const globalMsg = await getGlobalWelcomeMessage();
     if (globalMsg && globalMsg.trim()) {
       return globalMsg
-        .replace(/{{name}}/gi, leadName || '')
-        .replace(/{{leadName}}/gi, leadName || '')
+        .replace(/{{name}}/gi, leadName || 'there')
+        .replace(/{{leadName}}/gi, leadName || 'there')
+        .replace(/{{project}}/gi, projName)
+        .replace(/{{projectName}}/gi, projName)
+        .replace(/{{location}}/gi, projLocation)
+        .replace(/{{price}}/gi, projPrice)
         .trim();
-    }
-
-    // 2. Second Priority: Project-specific welcome message
-    if (lead?.projectId && (lead.projectId as any).welcomeMessage) {
-      const projMsg = (lead.projectId as any).welcomeMessage.trim();
-      if (projMsg) {
-        return projMsg
-          .replace(/{{name}}/gi, leadName || '')
-          .replace(/{{leadName}}/gi, leadName || '')
-          .trim();
-      }
     }
 
     // 3. Third Priority: Template marked as default in templates collection
@@ -69,23 +85,25 @@ export const getResolvedDefaultMessage = async (lead?: any): Promise<string> => 
     if (tmpl && tmpl.bodyText) {
       const vars: Record<string, string> = {
         '1': leadName || 'there',
-        '2': (lead?.projectId && (lead.projectId as any).name) || 'our properties',
+        '2': projName,
         '3': lead?.whatIsYourBudget || '',
         name: leadName || 'there',
         leadName: leadName || 'there',
         phone: lead?.phone || '',
         email: lead?.email || '',
-        project: (lead?.projectId && (lead.projectId as any).name) || 'our properties',
+        project: projName,
+        projectName: projName,
+        location: projLocation,
+        price: projPrice,
         budget: lead?.whatIsYourBudget || '',
         timeline: lead?.whenAreYouPlanningToPurchase || '',
       };
 
-      // Also map variables array if template uses indexed variables ({{1}}, {{2}}...)
       if (Array.isArray(tmpl.variables)) {
         tmpl.variables.forEach((vName, idx) => {
           const varIndex = String(idx + 1);
           if (vName === 'name' || vName === 'fullName') vars[varIndex] = leadName || 'there';
-          else if (vName === 'project' || vName === 'propertyName') vars[varIndex] = (lead?.projectId && (lead.projectId as any).name) || 'our properties';
+          else if (vName === 'project' || vName === 'propertyName') vars[varIndex] = projName;
           else if (vName === 'budget') vars[varIndex] = lead?.whatIsYourBudget || '';
           else if (vName === 'phone') vars[varIndex] = lead?.phone || '';
         });
@@ -97,6 +115,6 @@ export const getResolvedDefaultMessage = async (lead?: any): Promise<string> => 
     console.error('Error resolving dynamic default template:', err);
   }
 
-  // If admin has not configured any first message, return empty string so no canned default is sent
-  return '';
+  const fallbackLeadName = lead?.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
+  return getDefaultMessage(fallbackLeadName);
 };

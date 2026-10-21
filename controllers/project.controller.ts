@@ -34,6 +34,9 @@ export async function createProject(req: Request, res: Response): Promise<void> 
       keywords,
       summary,
       location,
+      locationUrl,
+      locationLink,
+      googleMapsUrl,
       developer,
       priceRange,
       unitTypes,
@@ -68,12 +71,15 @@ export async function createProject(req: Request, res: Response): Promise<void> 
       return;
     }
 
+    const finalLocationUrl = (locationUrl || locationLink || googleMapsUrl || '').toString().trim();
+
     const project = await Project.create({
       name: name.trim(),
       slug: finalSlug,
       keywords: Array.isArray(keywords) ? keywords.map((k: string) => k.trim()) : [],
       summary: summary || '',
       location: location || '',
+      locationUrl: finalLocationUrl,
       developer: developer || '',
       priceRange: priceRange || '',
       unitTypes: Array.isArray(unitTypes) ? unitTypes : [],
@@ -131,7 +137,7 @@ export async function uploadProjectMedia(req: Request, res: Response): Promise<v
     }
 
     // Also support passing direct URLs in body (e.g. hosted links)
-    const { images, image, videos, video, map, brochure } = req.body;
+    const { images, image, videos, video, map, brochure, locationUrl, locationLink, googleMapsUrl } = req.body;
     const directImages = images || image;
     if (directImages) {
       const arr = Array.isArray(directImages) ? directImages : [directImages];
@@ -147,6 +153,10 @@ export async function uploadProjectMedia(req: Request, res: Response): Promise<v
     }
     if (brochure) {
       project.brochure = brochure;
+    }
+    const finalLocLink = locationUrl || locationLink || googleMapsUrl;
+    if (finalLocLink !== undefined) {
+      project.locationUrl = finalLocLink ? String(finalLocLink).trim() : '';
     }
 
     await project.save();
@@ -193,6 +203,11 @@ export async function updateProject(req: Request, res: Response): Promise<void> 
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
+
+    const locLink = updateData.locationUrl || updateData.locationLink || updateData.googleMapsUrl;
+    if (locLink !== undefined) {
+      updateData.locationUrl = locLink ? String(locLink).trim() : '';
+    }
 
     if (updateData.slug) {
       updateData.slug = updateData.slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');

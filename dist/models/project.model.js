@@ -50,6 +50,7 @@ const ProjectSchema = new mongoose_1.Schema({
     keywords: [{ type: String, trim: true }],
     summary: { type: String, default: '', trim: true },
     location: { type: String, default: '', trim: true },
+    locationUrl: { type: String, default: '', trim: true },
     developer: { type: String, default: '', trim: true },
     priceRange: { type: String, default: '', trim: true },
     unitTypes: [UnitTypeSchema],

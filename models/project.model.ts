@@ -18,6 +18,7 @@ export interface IProject extends Document {
   keywords: string[];
   summary: string;
   location: string;
+  locationUrl?: string;
   developer: string;
   priceRange: string;
   unitTypes: IUnitType[];
@@ -64,6 +65,7 @@ const ProjectSchema = new Schema<IProject>(
     keywords: [{ type: String, trim: true }],
     summary: { type: String, default: '', trim: true },
     location: { type: String, default: '', trim: true },
+    locationUrl: { type: String, default: '', trim: true },
     developer: { type: String, default: '', trim: true },
     priceRange: { type: String, default: '', trim: true },
     unitTypes: [UnitTypeSchema],

@@ -38,7 +38,7 @@ async function getProjectById(req, res) {
 // POST /api/projects - Create a new project
 async function createProject(req, res) {
     try {
-        const { name, slug, keywords, summary, location, developer, priceRange, unitTypes, amenities, possession, reraNumber, paymentPlan, siteVisitInfo, currentOffers, doNotSay, faqs, welcomeMessage, images, videos, map, brochure, isActive, } = req.body;
+        const { name, slug, keywords, summary, location, locationUrl, locationLink, googleMapsUrl, developer, priceRange, unitTypes, amenities, possession, reraNumber, paymentPlan, siteVisitInfo, currentOffers, doNotSay, faqs, welcomeMessage, images, videos, map, brochure, isActive, } = req.body;
         if (!name || !name.trim()) {
             res.status(400).json({ success: false, error: 'Project name is required' });
             return;
@@ -51,12 +51,14 @@ async function createProject(req, res) {
             res.status(400).json({ success: false, error: 'A project with this slug or name already exists' });
             return;
         }
+        const finalLocationUrl = (locationUrl || locationLink || googleMapsUrl || '').toString().trim();
         const project = await project_model_1.default.create({
             name: name.trim(),
             slug: finalSlug,
             keywords: Array.isArray(keywords) ? keywords.map((k) => k.trim()) : [],
             summary: summary || '',
             location: location || '',
+            locationUrl: finalLocationUrl,
             developer: developer || '',
             priceRange: priceRange || '',
             unitTypes: Array.isArray(unitTypes) ? unitTypes : [],
@@ -110,7 +112,7 @@ async function uploadProjectMedia(req, res) {
             }
         }
         // Also support passing direct URLs in body (e.g. hosted links)
-        const { images, image, videos, video, map, brochure } = req.body;
+        const { images, image, videos, video, map, brochure, locationUrl, locationLink, googleMapsUrl } = req.body;
         const directImages = images || image;
         if (directImages) {
             const arr = Array.isArray(directImages) ? directImages : [directImages];
@@ -126,6 +128,10 @@ async function uploadProjectMedia(req, res) {
         }
         if (brochure) {
             project.brochure = brochure;
+        }
+        const finalLocLink = locationUrl || locationLink || googleMapsUrl;
+        if (finalLocLink !== undefined) {
+            project.locationUrl = finalLocLink ? String(finalLocLink).trim() : '';
         }
         await project.save();
         res.json({
@@ -172,6 +178,10 @@ async function updateProject(req, res) {
     try {
         const { id } = req.params;
         const updateData = { ...req.body };
+        const locLink = updateData.locationUrl || updateData.locationLink || updateData.googleMapsUrl;
+        if (locLink !== undefined) {
+            updateData.locationUrl = locLink ? String(locLink).trim() : '';
+        }
         if (updateData.slug) {
             updateData.slug = updateData.slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
             const conflict = await project_model_1.default.findOne({ slug: updateData.slug, _id: { $ne: id } });

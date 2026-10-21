@@ -13,7 +13,7 @@ export async function getGlobalWelcomeMessage(): Promise<string> {
       return setting.value.trim();
     }
   } catch (err: any) {
-    console.error('[BotSetting] ❌ Error getting global welcome message:', err?.message || err);
+    console.error('[BotSetting] âŒ Error getting global welcome message:', err?.message || err);
   }
   return '';
 }
@@ -37,12 +37,15 @@ export async function setGlobalWelcomeMessage(message: string): Promise<void> {
 
     // Also sync to all projects so any project-level query also has it
     if (trimmed) {
-      await Project.updateMany({}, { $set: { welcomeMessage: trimmed } }).catch(() => {});
+      await Project.updateMany(
+        { $or: [{ welcomeMessage: { $exists: false } }, { welcomeMessage: '' }, { welcomeMessage: null }] },
+        { $set: { welcomeMessage: trimmed } }
+      ).catch(() => {});
     }
 
-    console.log(`[BotSetting] ✅ Universal welcome message saved successfully (${trimmed.length} chars)`);
+    console.log(`[BotSetting] âœ… Universal welcome message saved successfully (${trimmed.length} chars)`);
   } catch (err: any) {
-    console.error('[BotSetting] ❌ Error saving global welcome message:', err?.message || err);
+    console.error('[BotSetting] âŒ Error saving global welcome message:', err?.message || err);
     throw err;
   }
 }

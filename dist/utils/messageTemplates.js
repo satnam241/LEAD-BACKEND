@@ -1,5 +1,4 @@
 "use strict";
-// utils/messageTemplates.ts
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -33,8 +32,13 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getResolvedDefaultMessage = exports.resolveTemplateText = exports.getDefaultMessage = void 0;
+// utils/messageTemplates.ts
+const mongoose_1 = __importDefault(require("mongoose"));
 const getDefaultMessage = (leadName) => {
     return `Hi ${leadName || "there"}, 👋
 
@@ -70,24 +74,38 @@ exports.resolveTemplateText = resolveTemplateText;
 const getResolvedDefaultMessage = async (lead) => {
     try {
         const leadName = lead?.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
-        // 1. Highest Priority: Universal First Message configured by Admin for ALL leads
+        // Resolve project details if available
+        let projectDoc = lead?.project || lead?.projectId;
+        if (projectDoc && (typeof projectDoc === 'string' || projectDoc instanceof mongoose_1.default.Types.ObjectId)) {
+            const Project = (await Promise.resolve().then(() => __importStar(require('../models/project.model')))).default;
+            projectDoc = await Project.findById(projectDoc).select('name location priceRange welcomeMessage').lean();
+        }
+        const projName = projectDoc?.name || 'our prime properties';
+        const projLocation = projectDoc?.location || '';
+        const projPrice = projectDoc?.priceRange || '';
+        // 1. Highest Priority: Project-specific welcome message if configured by Admin
+        if (projectDoc?.welcomeMessage && projectDoc.welcomeMessage.trim()) {
+            return projectDoc.welcomeMessage.trim()
+                .replace(/{{name}}/gi, leadName || 'there')
+                .replace(/{{leadName}}/gi, leadName || 'there')
+                .replace(/{{project}}/gi, projName)
+                .replace(/{{projectName}}/gi, projName)
+                .replace(/{{location}}/gi, projLocation)
+                .replace(/{{price}}/gi, projPrice)
+                .trim();
+        }
+        // 2. Second Priority: Universal First Message configured by Admin for ALL leads
         const { getGlobalWelcomeMessage } = await Promise.resolve().then(() => __importStar(require('../services/botSettingService')));
         const globalMsg = await getGlobalWelcomeMessage();
         if (globalMsg && globalMsg.trim()) {
             return globalMsg
-                .replace(/{{name}}/gi, leadName || '')
-                .replace(/{{leadName}}/gi, leadName || '')
+                .replace(/{{name}}/gi, leadName || 'there')
+                .replace(/{{leadName}}/gi, leadName || 'there')
+                .replace(/{{project}}/gi, projName)
+                .replace(/{{projectName}}/gi, projName)
+                .replace(/{{location}}/gi, projLocation)
+                .replace(/{{price}}/gi, projPrice)
                 .trim();
-        }
-        // 2. Second Priority: Project-specific welcome message
-        if (lead?.projectId && lead.projectId.welcomeMessage) {
-            const projMsg = lead.projectId.welcomeMessage.trim();
-            if (projMsg) {
-                return projMsg
-                    .replace(/{{name}}/gi, leadName || '')
-                    .replace(/{{leadName}}/gi, leadName || '')
-                    .trim();
-            }
         }
         // 3. Third Priority: Template marked as default in templates collection
         const Template = (await Promise.resolve().then(() => __importStar(require('../models/template.model')))).default;
@@ -98,24 +116,26 @@ const getResolvedDefaultMessage = async (lead) => {
         if (tmpl && tmpl.bodyText) {
             const vars = {
                 '1': leadName || 'there',
-                '2': (lead?.projectId && lead.projectId.name) || 'our properties',
+                '2': projName,
                 '3': lead?.whatIsYourBudget || '',
                 name: leadName || 'there',
                 leadName: leadName || 'there',
                 phone: lead?.phone || '',
                 email: lead?.email || '',
-                project: (lead?.projectId && lead.projectId.name) || 'our properties',
+                project: projName,
+                projectName: projName,
+                location: projLocation,
+                price: projPrice,
                 budget: lead?.whatIsYourBudget || '',
                 timeline: lead?.whenAreYouPlanningToPurchase || '',
             };
-            // Also map variables array if template uses indexed variables ({{1}}, {{2}}...)
             if (Array.isArray(tmpl.variables)) {
                 tmpl.variables.forEach((vName, idx) => {
                     const varIndex = String(idx + 1);
                     if (vName === 'name' || vName === 'fullName')
                         vars[varIndex] = leadName || 'there';
                     else if (vName === 'project' || vName === 'propertyName')
-                        vars[varIndex] = (lead?.projectId && lead.projectId.name) || 'our properties';
+                        vars[varIndex] = projName;
                     else if (vName === 'budget')
                         vars[varIndex] = lead?.whatIsYourBudget || '';
                     else if (vName === 'phone')
@@ -128,8 +148,8 @@ const getResolvedDefaultMessage = async (lead) => {
     catch (err) {
         console.error('Error resolving dynamic default template:', err);
     }
-    // If admin has not configured any first message, return empty string so no canned default is sent
-    return '';
+    const fallbackLeadName = lead?.fullName && !lead.fullName.startsWith('WhatsApp Lead') ? lead.fullName.trim() : '';
+    return (0, exports.getDefaultMessage)(fallbackLeadName);
 };
 exports.getResolvedDefaultMessage = getResolvedDefaultMessage;
 //# sourceMappingURL=messageTemplates.js.map
