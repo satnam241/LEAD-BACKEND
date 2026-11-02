@@ -236,7 +236,7 @@ async function checkAndNudgeInactiveLeads() {
             if (!lead.phone)
                 continue;
             const projectName = lead.projectId?.name ? `*${lead.projectId.name}*` : "our property";
-            const nudgeMessage = `Hi ${lead.fullName || "there"}! 👋 Hope you're doing well.\n\nMain ${projectName} ke regarding follow up kar raha tha. Kya aapko pricing aur project details review karne ka mauka mila?\n\nAgar aapka koi question hai, sample flat visit plan karna chahte hain, ya floor plan dekhna ho, toh zaroor batayein — I am here to help! 🏡`;
+            const nudgeMessage = `Hi ${lead.fullName || "there"}! 👋 Hope you're doing well.\n\nMain ${projectName} ke regarding follow up kar raha tha. Kya aapko pricing aur project details review karne ka mauka mila?\n\nAgar aapka koi question hai, site visit plan karna chahte hain, ya property details dekhna ho, toh zaroor batayein — I am here to help! 🏡`;
             try {
                 await sendWhatsAppUnified(lead.phone, nudgeMessage);
                 console.log(`[Smart Follow-up] 📨 Dispatched gentle nudge to ${lead.phone} (${lead.fullName})`);

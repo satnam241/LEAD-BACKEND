@@ -99,7 +99,7 @@ function isSiteVisitIntent(text) {
         'visit kab',
         'visit kar',
         'sample flat dekh',
-        'sample flat visit',
+        'site visit',
         'property dekh',
         'kab aa sakte',
         'visit schedule',
@@ -438,7 +438,7 @@ ${detectedLang === 'english'
       - NEVER, UNDER ANY CIRCUMSTANCES, REPLY IN FULL ENGLISH!
       - Even if the user says short English words or loanwords like "ok", "yes", "sure", "location", "send location", "price", "brochure", "site visit", or "call me", you MUST REMAIN 100% IN HINGLISH!
       - Translate all database facts (even if provided in English below) into natural, respectful Hinglish.
-      - Example Hinglish tone: "Yeh project prime location par situated hai aur yahan 24/7 security, clubhouse aur swimming pool jaisi top amenities milti hain. Kya hum is weekend par aapka sample flat visit plan karein?"`
+      - Example Hinglish tone: "Yeh project prime location par situated hai aur yahan 24/7 security, clubhouse aur swimming pool jaisi top amenities milti hain. Kya hum is weekend par aapka site visit plan karein?"`
             : `   * 🪔 STRICT HINDI (DEVANAGARI) INSTRUCTION:
       - The user is communicating in HINDI. You MUST reply 100% in respectful, clear Hindi Devanagari script.`}
 
@@ -460,7 +460,7 @@ ${detectedLang === 'english'
    - Offer to share recent construction progress photos or an HD video walkthrough.
 5. SOFT SALES CLOSING (MICRO-COMMITMENT CTAs):
    - Never push aggressively. Use low-friction binary choice closing:
-     * "Would you like me to share a quick 1-minute video walkthrough, or are you free for a sample flat visit this Saturday?"
+     * "Would you like me to share a quick 1-minute video walkthrough, or are you free for a site visit this Saturday?"
      * "Does Saturday or Sunday morning work better for a quick 20-minute site walkthrough?"
 
 --------------------------------------------------
@@ -572,7 +572,7 @@ async function generateReply(phone, text, lead, projectId, contextNote) {
     if (/\[Shared (?:Live )?Location:/i.test(text)) {
         detectedIntent = 'shared_location';
         sharedLocationNote = `USER ACTION COMPLETED: The customer has shared their pinned or live location on WhatsApp (${text}).
-INSTRUCTION FOR AI: Thank the customer warmly for sharing their location. Let them know our property advisory team at Bhole Baba Investments has received it. Clearly explain the route and accessibility to our project "${projectDoc?.name || 'our project'}" located at "${projectDoc?.location || 'our site'}", and consultatively offer to schedule a private sample flat site visit this weekend. Keep your response strictly grounded in [ ${lang.toUpperCase()} ].`;
+INSTRUCTION FOR AI: Thank the customer warmly for sharing their location. Let them know our property advisory team at Bhole Baba Investments has received it. Clearly explain the route and accessibility to our project "${projectDoc?.name || 'our project'}" located at "${projectDoc?.location || 'our site'}", and consultatively offer to schedule a private site visit this weekend. Keep your response strictly grounded in [ ${lang.toUpperCase()} ].`;
     }
     // ── A. SITE VISIT DETECTION & ENGINE ──
     if (isSiteVisitIntent(text)) {
@@ -637,7 +637,7 @@ INSTRUCTION FOR AI: Dynamically generate a warm, enthusiastic, professional conf
         }
         else {
             detectedIntent = 'site_visit_inquiry';
-            siteVisitNote = `USER INTENT: The buyer wants to visit the site or sample flat for "${projectDoc?.name || 'our property'}", but has not mentioned a specific date or time.
+            siteVisitNote = `USER INTENT: The buyer wants to schedule a site visit for "${projectDoc?.name || 'our property'}", but has not mentioned a specific date or time.
 INSTRUCTION FOR AI: Warmly welcome their visit interest. Consultatively ask whether Saturday or Sunday works best for their schedule, and whether Morning (11:00 AM) or Evening (4:00 PM) is preferred.`;
         }
     }
@@ -649,10 +649,10 @@ INSTRUCTION FOR AI: Warmly welcome their visit interest. Consultatively ask whet
             const images = Array.isArray(projectDoc.images) ? projectDoc.images.filter(Boolean) : [];
             if (images.length > 0) {
                 for (let i = 0; i < Math.min(images.length, 3); i++) {
-                    const caption = i === 0 ? `📸 *${projectDoc.name}* • Sample Flat & Site Photo` : undefined;
+                    const caption = i === 0 ? `📸 *${projectDoc.name}* • Site & Project Photo` : undefined;
                     (0, baileysService_1.sendMedia)(phone, images[i], caption).catch(() => { });
                 }
-                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched ${Math.min(images.length, 3)} sample flat and site photos of "${projectDoc.name}" to the buyer's WhatsApp.
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched ${Math.min(images.length, 3)} site and project photos of "${projectDoc.name}" to the buyer's WhatsApp.
 INSTRUCTION FOR AI: Dynamically acknowledge that the photos have been sent above, highlight the quality construction/layout, and consultatively ask if they would like to schedule a private site visit to tour the property in person.`;
             }
             else {

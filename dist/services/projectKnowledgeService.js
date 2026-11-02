@@ -493,7 +493,7 @@ function formatSingleProjectDetails(project, lang) {
         reply += `ðŸ“… *Possession:* ${project.possession}\n`;
     if (project.reraNumber)
         reply += `ðŸ›ï¸ *RERA Number:* ${project.reraNumber}\n`;
-    reply += `\nKya hum is weekend par aapka ek sample flat site visit schedule karein taaki aap quality khud dekh sakein? ðŸ¡`;
+    reply += `\nKya hum is weekend par aapka ek site visit schedule karein taaki aap quality khud dekh sakein? ðŸ¡`;
     return reply;
 }
 /**
@@ -620,7 +620,7 @@ function buildIntelligentRealEstateResponse(project, userMessage, lang, activePr
         if (lang === 'hindi') {
             return `*${project.name}* à¤ªà¥à¤°à¤¾à¤‡à¤® à¤²à¥‹à¤•à¥‡à¤¶à¤¨ *${locText}* à¤ªà¤° à¤¸à¥à¤¥à¤¿à¤¤ à¤¹à¥ˆà¥¤\n\nðŸ“ *à¤—à¥‚à¤—à¤² à¤®à¥ˆà¤ªà¥à¤¸ à¤²à¤¿à¤‚à¤•:* ${mapsLink}\n\nà¤¯à¤¹à¤¾à¤ à¤¸à¥‡ à¤®à¥à¤–à¥à¤¯ à¤¹à¤¾à¤ˆà¤µà¥‡, à¤¸à¥à¤•à¥‚à¤² à¤”à¤° à¤…à¤¸à¥à¤ªà¤¤à¤¾à¤²à¥‹à¤‚ à¤•à¥€ à¤¬à¥‡à¤¹à¤¤à¤°à¥€à¤¨ à¤•à¤¨à¥‡à¤•à¥à¤Ÿà¤¿à¤µà¤¿à¤Ÿà¥€ à¤¹à¥ˆà¥¤ à¤•à¥à¤¯à¤¾ à¤¹à¤® à¤‡à¤¸ à¤¸à¤ªà¥à¤¤à¤¾à¤¹à¤¾à¤‚à¤¤ à¤ªà¤° à¤†à¤ªà¤•à¤¾ à¤¸à¤¾à¤‡à¤Ÿ à¤µà¤¿à¤œà¤¿à¤Ÿ à¤ªà¥à¤²à¤¾à¤¨ à¤•à¤°à¥‡à¤‚? ðŸ¡`;
         }
-        return `*${project.name}* prime location par situated hai â€” *${locText}*.\n\nðŸ“ *Google Maps Link:* ${mapsLink}\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek sample flat site visit schedule karein? ðŸ¡`;
+        return `*${project.name}* prime location par situated hai â€” *${locText}*.\n\nðŸ“ *Google Maps Link:* ${mapsLink}\n\nYahan se highway connectivity, schools aur daily essentials bohot paas hain. Kya hum is weekend par aapka ek site visit schedule karein? ðŸ¡`;
     }
     // 5. Asking about Amenities / Facilities
     const isAskingAmenities = /amenit|facilit|park|gym|pool|security|road|water|cctv|suvidha/i.test(rawLower);
@@ -638,11 +638,11 @@ function buildIntelligentRealEstateResponse(project, userMessage, lang, activePr
     const projName = project?.name || 'our prime properties';
     const priceSnippet = project?.priceRange ? `starting @ ${project.priceRange}` : 'at the best market rates';
     if (lang === 'english') {
-        return `Thank you for reaching out to *Bhole Baba Investments*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a sample flat site visit this weekend? ðŸ¡`;
+        return `Thank you for reaching out to *Bhole Baba Investments*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a site visit this weekend? ðŸ¡`;
     }
     if (lang === 'hindi') {
         return `*à¤­à¥‹à¤²à¥‡ à¤¬à¤¾à¤¬à¤¾ à¤‡à¤¨à¥à¤µà¥‡à¤¸à¥à¤Ÿà¤®à¥‡à¤‚à¤Ÿà¥à¤¸* à¤®à¥‡à¤‚ à¤¸à¤‚à¤ªà¤°à¥à¤• à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤§à¤¨à¥à¤¯à¤µà¤¾à¤¦! *${projName}* à¤®à¥‡à¤‚ à¤¹à¤®à¤¾à¤°à¥‡ à¤ªà¤¾à¤¸ ${priceSnippet} à¤¬à¥‡à¤¹à¤¤à¤°à¥€à¤¨ à¤µà¤¿à¤•à¤²à¥à¤ª à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆà¤‚à¥¤\n\nà¤•à¥à¤¯à¤¾ à¤†à¤ª à¤²à¥‹à¤•à¥‡à¤¶à¤¨, à¤¯à¥‚à¤¨à¤¿à¤Ÿ à¤¸à¤¾à¤‡à¤œ à¤œà¤¾à¤¨à¤¨à¤¾ à¤šà¤¾à¤¹à¤¤à¥‡ à¤¹à¥ˆà¤‚ à¤¯à¤¾ à¤‡à¤¸ à¤¸à¤ªà¥à¤¤à¤¾à¤¹à¤¾à¤‚à¤¤ à¤ªà¤° à¤¸à¤¾à¤‡à¤Ÿ à¤µà¤¿à¤œà¤¿à¤Ÿ à¤ªà¥à¤²à¤¾à¤¨ à¤•à¤°à¤¨à¤¾ à¤šà¤¾à¤¹à¥‡à¤‚à¤—à¥‡? ðŸ¡`;
     }
-    return `*Bhole Baba Investments* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek sample flat site visit schedule karein? ðŸ¡`;
+    return `*Bhole Baba Investments* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek site visit schedule karein? ðŸ¡`;
 }
 //# sourceMappingURL=projectKnowledgeService.js.map
