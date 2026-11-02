@@ -764,7 +764,7 @@ Is dauran agar aapka pricing, location ya flat layouts ko lekar koi bhi sawaal h
 
     // Persist conversation state with needsAgent: true, aiPaused: false
     await ConversationState.findOneAndUpdate(
-      { leadId: lead._id },
+      { $or: [{ phone }, { leadId: lead._id }] },
       {
         $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
         $set: {
@@ -871,7 +871,7 @@ Conclude with a warm consultative question asking if they would like to schedule
       ]);
 
       await ConversationState.findOneAndUpdate(
-        { leadId: lead._id },
+        { $or: [{ phone }, { leadId: lead._id }] },
         {
           $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
           $set: {
@@ -967,7 +967,7 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
   }
 
   await ConversationState.findOneAndUpdate(
-    { leadId: lead._id },
+    { $or: [{ phone }, { leadId: lead._id }] },
     {
       $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
       $set: { ...stateUpdates, phone },

@@ -303,10 +303,16 @@ async function handleUserInteraction(phone, text, lead) {
                     ? `Certainly! Your callback request is already registered with our Senior Property Advisor at *Bhole Baba Investments*. An advisor will call you shortly! 📞`
                     : `Ji, aapka callback request already hamari senior advisory team (*Bhole Baba Investments*) ko assign kiya hua hai. Hamare advisor jald hi aapse call par connect karenge! 📞`;
                 await (0, baileysService_1.sendText)(phone, reassureMsg);
+                await conversationMessage_model_1.default.create([
+                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { leadId: lead._id, phone, role: 'assistant', content: reassureMsg, createdAt: new Date() },
+                ]).catch(() => { });
                 return;
             }
-            console.log(`[Chatbot] AI is paused for lead ${phone} (awaiting human agent)`);
-            return;
+            // If customer asks a question or says hello, auto-unpause so customer is NEVER ignored!
+            console.log(`[Chatbot] Lead ${phone} messaged with a new question while AI was paused. Auto-resuming AI...`);
+            state.aiPaused = false;
+            await state.save();
         }
         const activeProjects = await project_model_1.default.find({ isActive: true }).lean();
         let project = await resolveProjectForLead(lead, phone, state);

@@ -747,7 +747,7 @@ Is dauran agar aapka pricing, location ya flat layouts ko lekar koi bhi sawaal h
             { leadId: lead._id, phone, role: 'assistant', content: callbackReply, createdAt: new Date() },
         ]);
         // Persist conversation state with needsAgent: true, aiPaused: false
-        await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+        await conversationState_model_1.default.findOneAndUpdate({ $or: [{ phone }, { leadId: lead._id }] }, {
             $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
             $set: {
                 phone,
@@ -837,7 +837,7 @@ Conclude with a warm consultative question asking if they would like to schedule
                 { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
                 { leadId: lead._id, phone, role: 'assistant', content: cleanReply, createdAt: new Date() },
             ]);
-            await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+            await conversationState_model_1.default.findOneAndUpdate({ $or: [{ phone }, { leadId: lead._id }] }, {
                 $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
                 $set: {
                     phone,
@@ -927,7 +927,7 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
     if (!isFirstTurn && lang) {
         stateUpdates.preferredLanguage = lang;
     }
-    await conversationState_model_1.default.findOneAndUpdate({ leadId: lead._id }, {
+    await conversationState_model_1.default.findOneAndUpdate({ $or: [{ phone }, { leadId: lead._id }] }, {
         $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
         $set: { ...stateUpdates, phone },
         $inc: { attemptCount: 1 },
