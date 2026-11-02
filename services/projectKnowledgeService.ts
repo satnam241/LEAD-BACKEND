@@ -600,6 +600,17 @@ export function buildIntelligentRealEstateResponse(
 ): string {
   const rawLower = (userMessage || '').toLowerCase().trim();
 
+  // 0. Handoff / Callback request fallback
+  if (/(call\s*me|callback|call\s*back|call\s*karo|phone\s*karo|call\s*kijiye|call\s*chahiye|call\s*chaiye|contact\s*me|agent|human|representative)/i.test(rawLower)) {
+    if (lang === 'english') {
+      return `Certainly! I have forwarded your callback request to our Senior Property Advisor at *Bhole Baba Investments*.\n\n📞 Our advisor will call you shortly on your registered number.\n\nIn the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
+    }
+    if (lang === 'hindi') {
+      return `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *भोले बाबा इन्वेस्टमेंट्स* के सीनियर एडवाइजर को भेज दिया है।\n\n📞 हमारे एडवाइजर जल्द ही आपको कॉल करेंगे।\n\nइस दौरान यदि आपका प्रोजेक्ट, कीमत या लोकेशन से संबंधित कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
+    }
+    return `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*Bhole Baba Investments*) ko forward kar diya hai.\n\n📞 Hamare advisor jald hi aapse call par connect karenge.\n\nIs dauran agar aapka pricing, location ya flat layouts ko lekar koi sawaal ho, toh aap yahan puch sakte hain! 🏡`;
+  }
+
   // 1. Direct verified answer from FAQs or attributes
   const direct = findDirectFaqAnswer(project, userMessage);
   if (direct) {
