@@ -5,9 +5,11 @@ import jwt from "jsonwebtoken";
 import { Parser } from "json2csv";
 import nodemailer from "nodemailer";
 import Admin from "../models/admin.model";
+import Tenant from "../models/tenant.model";
 import Lead from "../models/lead.model";
 import ExcelJS from "exceljs";
 import XLSX from "xlsx";
+import { getTenantFilter, AuthenticatedRequest } from "../middleware/adminAuth";
 
 const getEmail = (row: any) => {
   const possibleKeys = [
@@ -70,11 +72,32 @@ export const adminLogin = async (req: Request, res: Response) => {
     if (!isMatch)
       return res.status(400).json({ success: false, error: "Invalid credentials" });
 
-    const token = jwt.sign({ id: admin._id, role: "admin" }, JWT_SECRET, { expiresIn: "1h" });
+    let tenantId = admin.tenantId;
+    if (!tenantId) {
+      const masterTenant = await Tenant.findOne({ isMaster: true });
+      if (masterTenant) {
+        tenantId = masterTenant._id as any;
+        admin.tenantId = masterTenant._id as any;
+        await admin.save();
+      }
+    }
+
+    const role = admin.role || "super_admin";
+    const token = jwt.sign(
+      {
+        id: admin._id,
+        userId: admin._id,
+        role,
+        tenantId: tenantId ? String(tenantId) : undefined,
+        email: admin.email,
+      },
+      JWT_SECRET,
+      { expiresIn: "24h" }
+    );
     res.json({
       success: true,
       token,
-      admin: { id: admin._id, email: admin.email, name: admin.name },   // ✅ FIX — name add kiya
+      admin: { id: admin._id, email: admin.email, name: admin.name, role, tenantId },
     });
   } catch (err) {
     console.error("Admin login error:", err);
@@ -155,7 +178,8 @@ export const adminGetLeads = async (req: Request, res: Response) => {
       interestLevel,
     } = req.query as Record<string, string>;
 
-    const filter: Record<string, any> = { isDeleted: false };
+    const tenantFilter = getTenantFilter(req as any);
+    const filter: Record<string, any> = { isDeleted: false, ...tenantFilter };
 
     // ✅ FIX: Status filter — accept any case, store lowercase
     if (status) filter.status = status.toLowerCase();
@@ -373,7 +397,8 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: "No fields provided to update" });
     }
 
-    const lead = await Lead.findByIdAndUpdate(id, setFields, { new: true });
+    const tenantFilter = getTenantFilter(req as any);
+    const lead = await Lead.findOneAndUpdate({ _id: id, ...tenantFilter }, setFields, { new: true });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
 
     res.json({ success: true, lead });
@@ -387,7 +412,8 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
 export const adminDeleteLead = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const lead   = await Lead.findByIdAndDelete(id);
+    const tenantFilter = getTenantFilter(req as any);
+    const lead   = await Lead.findOneAndDelete({ _id: id, ...tenantFilter });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
     res.json({ success: true, message: "Lead deleted successfully" });
   } catch (err) {
@@ -533,6 +559,43 @@ export const adminGetProfile = async (req: Request, res: Response) => {
   } catch (err) {
     console.error("Get admin profile error:", err);
     res.status(500).json({ success: false, error: "Server error" });
+  }
+};
+
+
+// ── Update Admin Profile ──────────────────────────────────────────────────────
+export const adminUpdateProfile = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name } = req.body;
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ success: false, error: "Name is required" });
+    }
+
+    const adminId = req.adminId;
+    const filter = adminId ? { _id: adminId } : {};
+    const admin = await Admin.findOneAndUpdate(
+      filter,
+      { $set: { name: name.trim() } },
+      { new: true }
+    ).select("-password");
+
+    if (!admin) {
+      return res.status(404).json({ success: false, error: "Admin not found" });
+    }
+
+    return res.json({
+      success: true,
+      message: "Admin name updated successfully",
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+      },
+    });
+  } catch (err) {
+    console.error("Update admin profile error:", err);
+    return res.status(500).json({ success: false, error: "Server error" });
   }
 };
 
