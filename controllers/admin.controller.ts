@@ -5,11 +5,11 @@ import jwt from "jsonwebtoken";
 import { Parser } from "json2csv";
 import nodemailer from "nodemailer";
 import Admin from "../models/admin.model";
-import Tenant from "../models/tenant.model";
+// import Tenant from "../models/tenant.model";
 import Lead from "../models/lead.model";
 import ExcelJS from "exceljs";
 import XLSX from "xlsx";
-import { getTenantFilter, AuthenticatedRequest } from "../middleware/adminAuth";
+// import { getTenantFilter, AuthenticatedRequest } from "../middleware/adminAuth";
 
 const getEmail = (row: any) => {
   const possibleKeys = [
@@ -72,7 +72,8 @@ export const adminLogin = async (req: Request, res: Response) => {
     if (!isMatch)
       return res.status(400).json({ success: false, error: "Invalid credentials" });
 
-    let tenantId = admin.tenantId;
+    /*
+    let tenantId = (admin as any).tenantId;
     if (!tenantId) {
       const masterTenant = await Tenant.findOne({ isMaster: true });
       if (masterTenant) {
@@ -81,14 +82,15 @@ export const adminLogin = async (req: Request, res: Response) => {
         await admin.save();
       }
     }
+    */
 
-    const role = admin.role || "super_admin";
+    const role = (admin as any).role || "admin";
     const token = jwt.sign(
       {
         id: admin._id,
         userId: admin._id,
         role,
-        tenantId: tenantId ? String(tenantId) : undefined,
+        // tenantId: tenantId ? String(tenantId) : undefined,
         email: admin.email,
       },
       JWT_SECRET,
@@ -97,7 +99,7 @@ export const adminLogin = async (req: Request, res: Response) => {
     res.json({
       success: true,
       token,
-      admin: { id: admin._id, email: admin.email, name: admin.name, role, tenantId },
+      admin: { id: admin._id, email: admin.email, name: admin.name /*, role, tenantId */ },
     });
   } catch (err) {
     console.error("Admin login error:", err);
@@ -178,7 +180,8 @@ export const adminGetLeads = async (req: Request, res: Response) => {
       interestLevel,
     } = req.query as Record<string, string>;
 
-    const tenantFilter = getTenantFilter(req as any);
+    // const tenantFilter = getTenantFilter(req as any);
+    const tenantFilter = {};
     const filter: Record<string, any> = { isDeleted: false, ...tenantFilter };
 
     // ✅ FIX: Status filter — accept any case, store lowercase
@@ -397,7 +400,8 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: "No fields provided to update" });
     }
 
-    const tenantFilter = getTenantFilter(req as any);
+    // const tenantFilter = getTenantFilter(req as any);
+    const tenantFilter = {};
     const lead = await Lead.findOneAndUpdate({ _id: id, ...tenantFilter }, setFields, { new: true });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
 
@@ -412,7 +416,8 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
 export const adminDeleteLead = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const tenantFilter = getTenantFilter(req as any);
+    // const tenantFilter = getTenantFilter(req as any);
+    const tenantFilter = {};
     const lead   = await Lead.findOneAndDelete({ _id: id, ...tenantFilter });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
     res.json({ success: true, message: "Lead deleted successfully" });
@@ -564,14 +569,14 @@ export const adminGetProfile = async (req: Request, res: Response) => {
 
 
 // ── Update Admin Profile ──────────────────────────────────────────────────────
-export const adminUpdateProfile = async (req: AuthenticatedRequest, res: Response) => {
+export const adminUpdateProfile = async (req: Request, res: Response) => {
   try {
     const { name } = req.body;
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ success: false, error: "Name is required" });
     }
 
-    const adminId = req.adminId;
+    const adminId = (req as any).adminId;
     const filter = adminId ? { _id: adminId } : {};
     const admin = await Admin.findOneAndUpdate(
       filter,
@@ -590,7 +595,7 @@ export const adminUpdateProfile = async (req: AuthenticatedRequest, res: Respons
         id: admin._id,
         name: admin.name,
         email: admin.email,
-        role: admin.role,
+        role: (admin as any).role || "admin",
       },
     });
   } catch (err) {
