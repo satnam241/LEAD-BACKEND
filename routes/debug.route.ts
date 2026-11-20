@@ -1,20 +1,23 @@
 import express, { Request, Response } from "express";
-import dotenv from "dotenv";
 import Lead from "../models/lead.model";
+import { adminAuth, superAdminOnly } from "../middleware/adminAuth";
 
-dotenv.config();
 const router = express.Router();
 
-router.get("/env-check", (req: Request, res: Response) => {
+// 🔒 Strict Super Admin access only - no public access to debug tools
+router.use(adminAuth, superAdminOnly);
+
+router.get("/env-check", (_req: Request, res: Response) => {
   const fbToken = process.env.FB_VERIFY_TOKEN;
   res.json({
     success: true,
-    FB_VERIFY_TOKEN: fbToken ? fbToken : "❌ Not Loaded",
-    note: "Compare this with your Facebook Verify Token — they must match exactly."
+    isFbVerifyTokenLoaded: !!fbToken,
+    tokenPreview: fbToken ? `${fbToken.slice(0, 3)}***${fbToken.slice(-3)}` : "❌ Not Loaded",
+    note: "Token verified by Super Admin authenticated session."
   });
 });
 
-router.get("/fix-old-data", async (req, res) => {
+router.post("/fix-old-data", async (_req: Request, res: Response) => {
   try {
     const result = await Lead.updateMany(
       { isDeleted: { $exists: false } },
@@ -23,11 +26,11 @@ router.get("/fix-old-data", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Migration done",
+      message: "Database migration completed safely",
       modifiedCount: result.modifiedCount,
     });
   } catch (err) {
-    console.error(err);
+    console.error("[Debug Route Error]", err);
     res.status(500).json({ error: "Migration failed" });
   }
 });

@@ -24,18 +24,19 @@ import {
 
 import { adminAuth } from "../middleware/adminAuth";
 import { upload } from "../middleware/upload";
+import { authLimiter } from "../middleware/security.middleware";
 
 const router = Router();
 
-// ── Auth ──────────────────────────────────────────────────────────
-router.post("/signup", adminSignup);
-router.post("/login", adminLogin);
-router.post("/forgot-password", forgotPassword);
+// ── Auth (Protected against Brute Force & Credential Stuffing) ──
+router.post("/signup", authLimiter, adminSignup);
+router.post("/login", authLimiter, adminLogin);
+router.post("/forgot-password", authLimiter, forgotPassword);
 router.post("/reset-password", changePasswordLoggedIn);
 router.get("/me", adminGetProfile);
 router.put("/me", adminAuth, adminUpdateProfile);
 router.put("/profile", adminAuth, adminUpdateProfile);
-router.post("/reset-password-token", resetPasswordWithToken);
+router.post("/reset-password-token", authLimiter, resetPasswordWithToken);
 
 // ── Lead Management ───────────────────────────────────────────────
 router.get("/leads", adminAuth, adminGetLeads);
@@ -43,14 +44,14 @@ router.put("/leads/:id", adminAuth, adminUpdateLead);
 router.delete("/leads/:id", adminAuth, adminDeleteLead);
 
 // ── Import / Export ───────────────────────────────────────────────
-router.post("/import-leads", upload.single("file"), importLeadsController);
+router.post("/import-leads", adminAuth, upload.single("file"), importLeadsController);
 router.get("/leads/export", adminAuth, adminExportLeads);
 
 // ── Stats ─────────────────────────────────────────────────────────
 router.get("/stats/daily", adminAuth, adminDailyStats);
 router.get("/stats/summary", adminAuth, adminStatsSummary);
 router.get("/monthly-report", adminAuth, adminAdvancedMonthlyReport);
-router.get("/leads/monthly-report", adminExportMonthlyReport);
+router.get("/leads/monthly-report", adminAuth, adminExportMonthlyReport);
 
 // ── Reminders ─────────────────────────────────────────────────────
 router.get("/reminders", adminAuth, getReminderLeads);

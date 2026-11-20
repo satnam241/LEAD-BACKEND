@@ -732,15 +732,25 @@ if (form_id) {
           : null;
 
         // ==========================================
-        // 📋 FB FORM CHECK & AUTO-REGISTER / PROJECT LOOKUP
+        // 📋 FB FORM CHECK & AUTO-REGISTER / TENANT & PROJECT LOOKUP
         // ==========================================
         let matchedProjectId = null;
+        let matchedTenantId = null;
         if (form_id) {
           try {
             let fbForm = await FbForm.findOne({ formId: form_id });
-            if (!fbForm) {
+            if (fbForm) {
+              if (fbForm.projectId) matchedProjectId = fbForm.projectId;
+              if (fbForm.tenantId) matchedTenantId = fbForm.tenantId;
+            } else {
+              const Tenant = (await import("../models/tenant.model")).default;
+              const matchingTenant = await Tenant.findOne({ "facebookConfig.formIds": form_id });
+              if (matchingTenant) {
+                matchedTenantId = matchingTenant._id;
+              }
               fbForm = await FbForm.create({
                 formId: form_id,
+                tenantId: matchedTenantId,
                 name: formName || 'Untitled Form',
                 locale: 'en_US',
                 status: 'ACTIVE',
@@ -750,11 +760,32 @@ if (form_id) {
               });
               console.log(`📋 Auto-registered new FB Form for mapping: ${form_id} (${formName || 'Untitled'})`);
             }
-            if (fbForm.projectId) {
-              matchedProjectId = fbForm.projectId;
-            }
           } catch (formErr: any) {
             console.error('⚠️ Error checking/upserting FbForm in webhook:', formErr?.message || formErr);
+          }
+        }
+
+        if (!matchedTenantId) {
+          try {
+            const Tenant = (await import("../models/tenant.model")).default;
+            const masterTenant = await Tenant.findOne({ isMaster: true });
+            if (masterTenant) matchedTenantId = masterTenant._id;
+          } catch {}
+        }
+
+        // ── Real-Time Monthly Limit Guard ──
+        if (matchedTenantId) {
+          try {
+            const { canTenantAddLeads, checkAndSendLeadLimitNotification } = await import("../services/tenantLimitService");
+            const limitCheck = await canTenantAddLeads(matchedTenantId as any, 1);
+            if (!limitCheck.allowed) {
+              console.warn(`⚠️ [FB Webhook] Tenant ${matchedTenantId} reached monthly lead limit (${limitCheck.currentCount}/${limitCheck.maxLeads}). Ingestion paused.`);
+              checkAndSendLeadLimitNotification(matchedTenantId as any).catch(console.error);
+              res.status(200).send("EVENT_RECEIVED");
+              return;
+            }
+          } catch (limErr: any) {
+            console.error("⚠️ Error checking tenant limit in FB webhook:", limErr?.message || limErr);
           }
         }
 
@@ -779,6 +810,8 @@ if (form_id) {
 
           source: "facebook",
 
+          tenantId: matchedTenantId,
+
           formId: form_id,
 
           formName: formName,
@@ -798,6 +831,15 @@ if (form_id) {
           "🆕 New lead saved:",
           newLead._id
         );
+
+        if (matchedTenantId) {
+          (async () => {
+            try {
+              const { checkAndSendLeadLimitNotification } = await import("../services/tenantLimitService");
+              await checkAndSendLeadLimitNotification(matchedTenantId as any);
+            } catch {}
+          })();
+        }
 
         // Auto message to new Facebook lead (non-blocking)
         (async () => {

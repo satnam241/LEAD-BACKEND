@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.connectDB = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
+const seedMasterTenant_1 = require("./seedMasterTenant");
 const connectDB = async () => {
     try {
         const mongoURI = process.env.MONGO_URI1;
@@ -14,6 +15,8 @@ const connectDB = async () => {
         }
         await mongoose_1.default.connect(mongoURI);
         console.log(" MongoDB connected successfully");
+        // Initialize Master Tenant, Plans, and backfill existing data
+        await (0, seedMasterTenant_1.initMasterTenantAndPlans)();
     }
     catch (error) {
         console.error("MongoDB connection error:", error);

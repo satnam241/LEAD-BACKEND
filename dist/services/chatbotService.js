@@ -58,6 +58,7 @@ const aiChatService_1 = require("./aiChatService");
 const llmService_1 = require("./llmService");
 const aiLearningService_1 = require("./aiLearningService");
 const projectKnowledgeService_1 = require("./projectKnowledgeService");
+const mongoose_1 = __importDefault(require("mongoose"));
 const READ_TRIGGER_DELAY_MS = 2500;
 // Format question and button options for text fallback
 function renderStepAsText(question, options) {
@@ -65,9 +66,9 @@ function renderStepAsText(question, options) {
     return `${question}\n\n${optionLines}\n\nTap an option or reply with your choice.`;
 }
 // Send question with interactive buttons (WhatsApp UI)
-async function sendStepQuestion(phone, step, isFirstStep = false, headerText) {
+async function sendStepQuestion(phone, step, isFirstStep = false, headerText, tenantId) {
     const header = headerText || (isFirstStep ? 'Real Estate Assistant 🏡✨' : undefined);
-    return (0, baileysService_1.sendInteractiveButtons)(phone, step.question, step.options, header, 'Tap an option button below');
+    return (0, baileysService_1.sendInteractiveButtons)(phone, step.question, step.options, header, 'Tap an option button below', tenantId);
 }
 // Robust option matching by number (1, 2, 3), title keywords, or option id
 function matchOption(options, replyText) {
@@ -120,13 +121,12 @@ function calculateInterest(attemptCount, isCompleted = false, hasCampaignContext
     return 'warm';
 }
 // Normalizes and searches lead across all common phone formats + ConversationState mapping
-async function findLeadByPhone(rawPhone) {
+async function findLeadByPhone(rawPhone, tenantId) {
     const norm = (0, baileysService_1.normalizePhone)(rawPhone);
     if (!norm)
         return null;
     const last10 = norm.slice(-10);
-    // 1. Direct phone matches with exact or regex on last 10 digits
-    let lead = await lead_model_1.default.findOne({
+    const phoneQuery = {
         $or: [
             { phone: norm },
             { phone: `+${norm}` },
@@ -136,13 +136,25 @@ async function findLeadByPhone(rawPhone) {
             { phone: `0${last10}` },
             { phone: { $regex: last10 } },
         ],
-    });
+    };
+    if (tenantId) {
+        phoneQuery.tenantId = tenantId;
+    }
+    // 1. Direct phone matches with exact or regex on last 10 digits
+    let lead = await lead_model_1.default.findOne(phoneQuery).sort({ updatedAt: -1 });
     if (lead)
         return lead;
     // 2. Check ConversationState for mapped leadId (handles WhatsApp privacy @lid or alternative JIDs)
-    const conv = await conversationState_model_1.default.findOne({
+    const convQuery = {
         $or: [{ phone: norm }, { phone: rawPhone }],
-    }).populate('leadId');
+    };
+    if (tenantId) {
+        convQuery.tenantId = tenantId;
+    }
+    const conv = await conversationState_model_1.default.findOne(convQuery).sort({ updatedAt: -1 }).populate('leadId');
+    if (conv && conv.leadId) {
+        return conv.leadId;
+    }
     if (conv && conv.leadId) {
         return conv.leadId;
     }
@@ -236,6 +248,15 @@ function detectMentionedOtherProject(text, currentProjectId, activeProjects) {
 }
 const debounceMap = new Map();
 const processingPhones = new Set();
+// 🛡️ WhatsApp Anti-Flood Protection: Max 5 messages per 10 seconds per phone number
+const phoneFloodTimestamps = new Map();
+function isFlooding(phone) {
+    const now = Date.now();
+    const timestamps = (phoneFloodTimestamps.get(phone) || []).filter((t) => now - t < 10000);
+    timestamps.push(now);
+    phoneFloodTimestamps.set(phone, timestamps);
+    return timestamps.length > 5;
+}
 /**
  * Send the first message with buttons when campaign message is READ
  */
@@ -270,8 +291,9 @@ async function sendReadWelcomeWithButtons(phone, lead) {
         // (Buttons will only be sent when an admin dispatches a WhatsApp campaign)
         if (greeting) {
             console.log(`[Chatbot] Sending simple first welcome text to ${phone} (No buttons): "${greeting.slice(0, 60)}..."`);
-            await (0, baileysService_1.sendText)(phone, greeting);
+            await (0, baileysService_1.sendText)(phone, greeting, lead?.tenantId?.toString());
             await conversationMessage_model_1.default.create({
+                tenantId: lead?.tenantId || null,
                 leadId: lead._id,
                 phone,
                 role: 'assistant',
@@ -293,19 +315,43 @@ async function handleUserInteraction(phone, text, lead) {
         let state = await conversationState_model_1.default.findOne({
             $or: [{ phone }, { leadId: lead._id }],
         }).sort({ updatedAt: -1 });
+        // Resolve agency name dynamically for this tenant
+        let agencyName = 'our Real Estate Advisory Team';
+        if (lead?.tenantId) {
+            const Tenant = (await Promise.resolve().then(() => __importStar(require('../models/tenant.model')))).default;
+            const tenantDoc = await Tenant.findById(lead.tenantId).select('name').lean();
+            if (tenantDoc?.name)
+                agencyName = tenantDoc.name;
+        }
+        else {
+            const Tenant = (await Promise.resolve().then(() => __importStar(require('../models/tenant.model')))).default;
+            const masterTenant = await Tenant.findOne({ isMaster: true }).select('name').lean();
+            agencyName = masterTenant?.name || 'Bhole Baba Investments';
+        }
         // 1. Check if AI is paused for human agent handoff
         if (state?.aiPaused) {
-            const { isHandoffRequested } = await Promise.resolve().then(() => __importStar(require('./aiChatService')));
+            const { isHandoffRequested, isContactNumberRequest, getSalesContactPhone, formatDisplayPhone } = await Promise.resolve().then(() => __importStar(require('./aiChatService')));
             if (isHandoffRequested(text)) {
-                console.log(`[Chatbot] Lead ${phone} requested callback again while AI is paused. Sending reassurance...`);
+                console.log(`[Chatbot] Lead ${phone} requested callback/contact again while AI is paused. Sending reassurance...`);
                 const lang = (0, projectKnowledgeService_1.detectLanguage)(text, { preferredLanguage: state?.preferredLanguage });
-                const reassureMsg = (lang === 'english')
-                    ? `Certainly! Your callback request is already registered with our Senior Property Advisor at *Bhole Baba Investments*. An advisor will call you shortly! 📞`
-                    : `Ji, aapka callback request already hamari senior advisory team (*Bhole Baba Investments*) ko assign kiya hua hai. Hamare advisor jald hi aapse call par connect karenge! 📞`;
-                await (0, baileysService_1.sendText)(phone, reassureMsg);
+                const salesPhone = await getSalesContactPhone(lead?.tenantId);
+                const formattedSalesPhone = formatDisplayPhone(salesPhone);
+                const isNumReq = isContactNumberRequest(text);
+                let reassureMsg = '';
+                if (isNumReq) {
+                    reassureMsg = (lang === 'english')
+                        ? `You can reach our Sales & Property Advisory Team directly at *${formattedSalesPhone}* (or message us right here). Our Senior Advisor at *${agencyName}* is also ready to assist you! 📞`
+                        : `Aap hamari Sales & Advisory Team se directly *${formattedSalesPhone}* par call ya WhatsApp kar sakte hain. *${agencyName}* ke senior advisor bhi aapse jald connect karenge! 📞`;
+                }
+                else {
+                    reassureMsg = (lang === 'english')
+                        ? `Certainly! Your callback request is already registered with our Senior Property Advisor at *${agencyName}*. You can also reach our Sales Team directly at *${formattedSalesPhone}* anytime. An advisor will connect with you shortly! 📞`
+                        : `Ji, aapka callback request already hamari senior advisory team (*${agencyName}*) ko assign kiya hua hai. Aap hamari Sales Team ko direct *${formattedSalesPhone}* par bhi call kar sakte hain. Hamare advisor jald hi connect karenge! 📞`;
+                }
+                await (0, baileysService_1.sendText)(phone, reassureMsg, lead?.tenantId?.toString());
                 await conversationMessage_model_1.default.create([
-                    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-                    { leadId: lead._id, phone, role: 'assistant', content: reassureMsg, createdAt: new Date() },
+                    { tenantId: lead?.tenantId || null, leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+                    { tenantId: lead?.tenantId || null, leadId: lead._id, phone, role: 'assistant', content: reassureMsg, createdAt: new Date() },
                 ]).catch(() => { });
                 return;
             }
@@ -314,7 +360,7 @@ async function handleUserInteraction(phone, text, lead) {
             state.aiPaused = false;
             await state.save();
         }
-        const activeProjects = await project_model_1.default.find({ isActive: true }).lean();
+        const activeProjects = await project_model_1.default.find(lead?.tenantId ? { tenantId: lead.tenantId, isActive: true } : { isActive: true }).lean();
         let project = await resolveProjectForLead(lead, phone, state);
         if (!project && activeProjects.length > 0) {
             project = activeProjects[0];
@@ -329,7 +375,7 @@ async function handleUserInteraction(phone, text, lead) {
                 state.pendingProjectSwitchId = null;
                 state.lastActiveAt = new Date();
                 await state.save();
-                await (0, baileysService_1.sendText)(phone, `Sure! We are now exploring *${switchTarget.name}* 🏡✨`);
+                await (0, baileysService_1.sendText)(phone, `Sure! We are now exploring *${switchTarget.name}* 🏡✨`, lead?.tenantId?.toString());
                 return;
             }
             else {
@@ -346,7 +392,7 @@ async function handleUserInteraction(phone, text, lead) {
                     state.lastActiveAt = new Date();
                     await state.save();
                 }
-                await (0, baileysService_1.sendText)(phone, `You were previously inquiring about *${project.name}*. Would you like to explore *${otherMentioned.name}* instead?\n\nPlease reply with *Yes* or *No*.`);
+                await (0, baileysService_1.sendText)(phone, `You were previously inquiring about *${project.name}*. Would you like to explore *${otherMentioned.name}* instead?\n\nPlease reply with *Yes* or *No*.`, lead?.tenantId?.toString());
                 return;
             }
         }
@@ -372,7 +418,7 @@ async function handleUserInteraction(phone, text, lead) {
                 await persistLeadInterest(lead._id, interest, { status: 'interested' });
                 (0, aiLearningService_1.extractAndSaveLeadPreferences)(lead._id, matched.title).catch(() => { });
                 if (matched.detailText && matched.detailText.trim()) {
-                    await (0, baileysService_1.sendText)(phone, matched.detailText.trim());
+                    await (0, baileysService_1.sendText)(phone, matched.detailText.trim(), lead?.tenantId?.toString());
                 }
                 if (isLastStep) {
                     state.currentStep = 'completed';
@@ -381,9 +427,9 @@ async function handleUserInteraction(phone, text, lead) {
                     console.log(`[Chatbot] Lead ${phone} completed all BotFlow questions! Interest: ${interest.toUpperCase()}`);
                     const lang = (0, projectKnowledgeService_1.detectLanguage)(text, { preferredLanguage: state?.preferredLanguage });
                     const completionMsg = (lang === 'english')
-                        ? `Thank you! We've noted your preferences. Our property advisory team at *Bhole Baba Investments* will connect with you shortly.`
-                        : `Thanks! Humne aapki preference note kar li hai. Hamari team *Bhole Baba Investments* se jald hi connect karegi.`;
-                    await (0, baileysService_1.sendText)(phone, completionMsg);
+                        ? `Thank you! We've noted your preferences. Our property advisory team at *${agencyName}* will connect with you shortly.`
+                        : `Thanks! Humne aapki preference note kar li hai. Hamari team *${agencyName}* se jald hi connect karegi.`;
+                    await (0, baileysService_1.sendText)(phone, completionMsg, lead?.tenantId?.toString());
                     return;
                 }
                 // Advance to next step
@@ -391,7 +437,7 @@ async function handleUserInteraction(phone, text, lead) {
                 state.currentStep = nextStep.stepKey;
                 await state.save();
                 console.log(`[Chatbot] Advancing ${phone} to Step ${currentStepIndex + 2}: "${nextStep.question}"`);
-                await sendStepQuestion(phone, nextStep, false);
+                await sendStepQuestion(phone, nextStep, false, undefined, lead?.tenantId?.toString());
                 return;
             }
         }
@@ -400,6 +446,7 @@ async function handleUserInteraction(phone, text, lead) {
         //
         if (!state) {
             state = await conversationState_model_1.default.create({
+                tenantId: lead?.tenantId || null,
                 leadId: lead._id,
                 phone,
                 activeProjectId: project?._id || null,
@@ -417,21 +464,21 @@ async function handleUserInteraction(phone, text, lead) {
         }
         const activeLLM = (0, llmService_1.getActiveLLMClient)();
         console.log(`[Chatbot] ${activeLLM.provider.toUpperCase()} (${activeLLM.model}) processing query from ${phone}: "${text}"`);
-        await (0, baileysService_1.sendTyping)(phone, 'composing');
+        await (0, baileysService_1.sendTyping)(phone, 'composing', lead?.tenantId?.toString());
         try {
             const aiResult = await (0, aiChatService_1.generateReply)(phone, text, lead, project?._id);
-            await (0, baileysService_1.sendTyping)(phone, 'paused');
+            await (0, baileysService_1.sendTyping)(phone, 'paused', lead?.tenantId?.toString());
             if (aiResult.reply && aiResult.reply.trim()) {
-                await (0, baileysService_1.sendText)(phone, aiResult.reply.trim());
+                await (0, baileysService_1.sendText)(phone, aiResult.reply.trim(), lead?.tenantId?.toString());
                 console.log(`[Chatbot] Sent LLM reply to ${phone}`);
             }
         }
         catch (err) {
             console.error('[Chatbot] Error generating LLM reply:', err?.message || err);
-            await (0, baileysService_1.sendTyping)(phone, 'paused');
+            await (0, baileysService_1.sendTyping)(phone, 'paused', lead?.tenantId?.toString());
             const lang = (0, projectKnowledgeService_1.detectLanguage)(text, { preferredLanguage: state?.preferredLanguage });
             const smartFallback = (0, projectKnowledgeService_1.buildIntelligentRealEstateResponse)(project, text, lang, activeProjects);
-            await (0, baileysService_1.sendText)(phone, smartFallback);
+            await (0, baileysService_1.sendText)(phone, smartFallback, lead?.tenantId?.toString());
         }
     }
     catch (err) {
@@ -445,9 +492,9 @@ function registerChatbot() {
     console.log('[Chatbot] Initializing Chatbot listeners for Delivery, Read, and Incoming messages...');
     const readTriggerDebounce = new Map();
     // 1. Trigger on Message Status (Delivered or Read)
-    (0, baileysService_1.onMessageStatus)(async (fromJid, waMessageId, status) => {
+    (0, baileysService_1.onMessageStatus)(async (fromJid, waMessageId, status, tenantId) => {
         try {
-            console.log(`[Chatbot] Message status update: "${status}" for JID: ${fromJid} (ID: ${waMessageId || 'N/A'})`);
+            console.log(`[Chatbot][${tenantId || 'master'}] Message status update: "${status}" for JID: ${fromJid} (ID: ${waMessageId || 'N/A'})`);
             let lead = null;
             let targetPhone = '';
             if (waMessageId) {
@@ -467,21 +514,40 @@ function registerChatbot() {
             if (!targetPhone && fromJid) {
                 targetPhone = (0, baileysService_1.normalizePhone)(fromJid);
             }
+            const resolvedTenantId = (tenantId && tenantId !== 'master') ? tenantId : undefined;
             if (!lead && targetPhone) {
-                lead = await findLeadByPhone(targetPhone);
+                lead = await findLeadByPhone(targetPhone, resolvedTenantId);
             }
             if (!targetPhone) {
                 console.warn(`[Chatbot] Could not determine target phone number for status: ${status}`);
                 return;
             }
             if (!lead) {
+                if (resolvedTenantId) {
+                    try {
+                        const { canTenantAddLeads, checkAndSendLeadLimitNotification } = await Promise.resolve().then(() => __importStar(require("./tenantLimitService")));
+                        const limitCheck = await canTenantAddLeads(resolvedTenantId, 1);
+                        if (!limitCheck.allowed) {
+                            console.warn(`⚠️ [Chatbot] Tenant ${resolvedTenantId} reached monthly lead limit (${limitCheck.currentCount}/${limitCheck.maxLeads}). Skipping auto lead on delivery.`);
+                            checkAndSendLeadLimitNotification(resolvedTenantId).catch(console.error);
+                            return;
+                        }
+                    }
+                    catch { }
+                }
                 lead = await lead_model_1.default.create({
                     fullName: `WhatsApp Lead (${targetPhone.slice(-4)})`,
                     phone: targetPhone,
                     source: 'whatsapp',
                     status: 'new',
                     interestLevel: 'cold',
+                    tenantId: resolvedTenantId ? new mongoose_1.default.Types.ObjectId(resolvedTenantId) : null,
                 });
+                if (resolvedTenantId) {
+                    Promise.resolve().then(() => __importStar(require("./tenantLimitService"))).then(({ checkAndSendLeadLimitNotification }) => {
+                        checkAndSendLeadLimitNotification(resolvedTenantId).catch(() => { });
+                    }).catch(() => { });
+                }
             }
             await conversationState_model_1.default.updateMany({ $or: [{ phone: targetPhone }, { leadId: lead._id }] }, { $set: { deliveryStatus: status, lastActiveAt: new Date() } }).catch(() => { });
             // ── When message is READ (Blue ticks) ──
@@ -517,26 +583,49 @@ function registerChatbot() {
             console.error('[Chatbot] Error in onMessageStatus handler:', err.message || err);
         }
     });
-    // 2. Trigger on Incoming User Messages
-    (0, baileysService_1.onIncomingMessage)(async (fromJid, text) => {
+    // 2. Trigger on Incoming User Messages (Tenant Isolated)
+    (0, baileysService_1.onIncomingMessage)(async (fromJid, text, _raw, tenantId) => {
         try {
             const normPhone = (0, baileysService_1.normalizePhone)(fromJid);
             if (!normPhone)
                 return;
-            console.log(`[Chatbot] Incoming message from ${normPhone}: "${text ?? ''}"`);
-            let lead = await findLeadByPhone(normPhone);
+            if (isFlooding(normPhone)) {
+                console.warn(`[Security Alert] Throttled incoming message from WhatsApp number ${normPhone} due to rapid message flooding.`);
+                return;
+            }
+            console.log(`[Chatbot][${tenantId || 'master'}] Incoming message from ${normPhone}: "${text ?? ''}"`);
+            const resolvedTenantId = (tenantId && tenantId !== 'master') ? tenantId : undefined;
+            let lead = await findLeadByPhone(normPhone, resolvedTenantId);
             if (!lead && fromJid) {
-                lead = await findLeadByPhone(fromJid);
+                lead = await findLeadByPhone(fromJid, resolvedTenantId);
             }
             if (!lead) {
-                console.log(`[Chatbot] Number ${normPhone} is not registered in CRM. Creating active lead...`);
+                if (resolvedTenantId) {
+                    try {
+                        const { canTenantAddLeads, checkAndSendLeadLimitNotification } = await Promise.resolve().then(() => __importStar(require("./tenantLimitService")));
+                        const limitCheck = await canTenantAddLeads(resolvedTenantId, 1);
+                        if (!limitCheck.allowed) {
+                            console.warn(`⚠️ [Chatbot] Tenant ${resolvedTenantId} reached monthly lead limit (${limitCheck.currentCount}/${limitCheck.maxLeads}). Skipping new lead registration.`);
+                            checkAndSendLeadLimitNotification(resolvedTenantId).catch(console.error);
+                            return;
+                        }
+                    }
+                    catch { }
+                }
+                console.log(`[Chatbot][${tenantId || 'master'}] Number ${normPhone} is not registered in CRM. Creating active lead...`);
                 lead = await lead_model_1.default.create({
                     fullName: `WhatsApp Lead (${normPhone.slice(-4)})`,
                     phone: normPhone,
                     source: 'whatsapp',
                     status: 'interested',
                     interestLevel: 'hot',
+                    tenantId: resolvedTenantId ? new mongoose_1.default.Types.ObjectId(resolvedTenantId) : null,
                 });
+                if (resolvedTenantId) {
+                    Promise.resolve().then(() => __importStar(require("./tenantLimitService"))).then(({ checkAndSendLeadLimitNotification }) => {
+                        checkAndSendLeadLimitNotification(resolvedTenantId).catch(() => { });
+                    }).catch(() => { });
+                }
             }
             // 🎯 GUARANTEED IMMEDIATE HOT UPGRADE in Lead document!
             await lead_model_1.default.findByIdAndUpdate(lead._id, {

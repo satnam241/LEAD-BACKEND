@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -11,20 +44,23 @@ exports.deleteProjectMedia = deleteProjectMedia;
 exports.updateProject = updateProject;
 exports.deactivateProject = deactivateProject;
 const project_model_1 = __importDefault(require("../models/project.model"));
-// GET /api/projects - List all projects
-async function listProjects(_req, res) {
+const adminAuth_1 = require("../middleware/adminAuth");
+// GET /api/projects - List all projects for authenticated tenant
+async function listProjects(req, res) {
     try {
-        const projects = await project_model_1.default.find().sort({ createdAt: -1 }).lean();
+        const filter = (0, adminAuth_1.getTenantFilter)(req);
+        const projects = await project_model_1.default.find(filter).sort({ createdAt: -1 }).lean();
         res.json({ success: true, projects });
     }
     catch (err) {
         res.status(500).json({ success: false, error: err.message || 'Failed to list projects' });
     }
 }
-// GET /api/projects/:id - Get single project by ID
+// GET /api/projects/:id - Get single project by ID (tenant scoped)
 async function getProjectById(req, res) {
     try {
-        const project = await project_model_1.default.findById(req.params.id).lean();
+        const filter = { _id: req.params.id, ...(0, adminAuth_1.getTenantFilter)(req) };
+        const project = await project_model_1.default.findOne(filter).lean();
         if (!project) {
             res.status(404).json({ success: false, error: 'Project not found' });
             return;
@@ -35,9 +71,22 @@ async function getProjectById(req, res) {
         res.status(500).json({ success: false, error: err.message || 'Failed to get project' });
     }
 }
-// POST /api/projects - Create a new project
+// POST /api/projects - Create a new project with subscription limit verification
 async function createProject(req, res) {
     try {
+        const tenantId = req.tenantId;
+        // Check tenant project limits via centralized Limit Service
+        if (tenantId) {
+            const { canTenantAddProject } = await Promise.resolve().then(() => __importStar(require("../services/tenantLimitService")));
+            const check = await canTenantAddProject(tenantId);
+            if (!check.allowed) {
+                res.status(403).json({
+                    success: false,
+                    error: check.error,
+                });
+                return;
+            }
+        }
         const { name, slug, keywords, summary, location, locationUrl, locationLink, googleMapsUrl, developer, priceRange, unitTypes, amenities, possession, reraNumber, paymentPlan, siteVisitInfo, currentOffers, doNotSay, faqs, welcomeMessage, images, videos, map, brochure, isActive, } = req.body;
         if (!name || !name.trim()) {
             res.status(400).json({ success: false, error: 'Project name is required' });
@@ -46,15 +95,17 @@ async function createProject(req, res) {
         const finalSlug = slug && slug.trim()
             ? slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
             : name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        const existing = await project_model_1.default.findOne({ slug: finalSlug });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const existing = await project_model_1.default.findOne({ slug: finalSlug, ...tenantFilter });
         if (existing) {
-            res.status(400).json({ success: false, error: 'A project with this slug or name already exists' });
+            res.status(400).json({ success: false, error: 'A project with this slug or name already exists in your account' });
             return;
         }
         const finalLocationUrl = (locationUrl || locationLink || googleMapsUrl || '').toString().trim();
         const project = await project_model_1.default.create({
             name: name.trim(),
             slug: finalSlug,
+            tenantId: tenantId || null,
             keywords: Array.isArray(keywords) ? keywords.map((k) => k.trim()) : [],
             summary: summary || '',
             location: location || '',
@@ -87,7 +138,8 @@ async function createProject(req, res) {
 async function uploadProjectMedia(req, res) {
     try {
         const { id } = req.params;
-        const project = await project_model_1.default.findById(id);
+        const filter = { _id: id, ...(0, adminAuth_1.getTenantFilter)(req) };
+        const project = await project_model_1.default.findOne(filter);
         if (!project) {
             res.status(404).json({ success: false, error: 'Project not found' });
             return;
@@ -111,7 +163,6 @@ async function uploadProjectMedia(req, res) {
                 project.brochure = `/public/uploads/${files.brochure[0].filename}`;
             }
         }
-        // Also support passing direct URLs in body (e.g. hosted links)
         const { images, image, videos, video, map, brochure, locationUrl, locationLink, googleMapsUrl } = req.body;
         const directImages = images || image;
         if (directImages) {
@@ -149,7 +200,8 @@ async function deleteProjectMedia(req, res) {
     try {
         const { id } = req.params;
         const { type, url } = req.body;
-        const project = await project_model_1.default.findById(id);
+        const filter = { _id: id, ...(0, adminAuth_1.getTenantFilter)(req) };
+        const project = await project_model_1.default.findOne(filter);
         if (!project) {
             res.status(404).json({ success: false, error: 'Project not found' });
             return;
@@ -178,19 +230,20 @@ async function updateProject(req, res) {
     try {
         const { id } = req.params;
         const updateData = { ...req.body };
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const locLink = updateData.locationUrl || updateData.locationLink || updateData.googleMapsUrl;
         if (locLink !== undefined) {
             updateData.locationUrl = locLink ? String(locLink).trim() : '';
         }
         if (updateData.slug) {
             updateData.slug = updateData.slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
-            const conflict = await project_model_1.default.findOne({ slug: updateData.slug, _id: { $ne: id } });
+            const conflict = await project_model_1.default.findOne({ slug: updateData.slug, _id: { $ne: id }, ...tenantFilter });
             if (conflict) {
                 res.status(400).json({ success: false, error: 'Slug is already used by another project' });
                 return;
             }
         }
-        const project = await project_model_1.default.findByIdAndUpdate(id, updateData, { new: true });
+        const project = await project_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, updateData, { new: true });
         if (!project) {
             res.status(404).json({ success: false, error: 'Project not found' });
             return;
@@ -205,7 +258,8 @@ async function updateProject(req, res) {
 async function deactivateProject(req, res) {
     try {
         const { id } = req.params;
-        const project = await project_model_1.default.findById(id);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const project = await project_model_1.default.findOne({ _id: id, ...tenantFilter });
         if (!project) {
             res.status(404).json({ success: false, error: 'Project not found' });
             return;

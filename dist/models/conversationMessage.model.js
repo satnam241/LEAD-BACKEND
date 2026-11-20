@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const ConversationMessageSchema = new mongoose_1.Schema({
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     leadId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     phone: { type: String, required: true, index: true },
     role: { type: String, enum: ['user', 'assistant'], required: true },

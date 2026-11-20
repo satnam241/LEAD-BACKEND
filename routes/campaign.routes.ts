@@ -7,8 +7,11 @@ import {
   getCampaignById,
   createCampaign,
 } from '../controllers/campaign.controller';
+import { adminAuth } from '../middleware/adminAuth';
 
 const router = Router();
+
+router.use(adminAuth);
 
 router.get('/stats', getStats);
 router.get('/audiences', getAudienceCounts);

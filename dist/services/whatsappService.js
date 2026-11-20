@@ -39,12 +39,12 @@ function normalizeToIndianWhatsApp(phone) {
  * Unified WhatsApp Sender
  * Tries Baileys first (WhatsApp Web session), then Meta Cloud API, then Twilio.
  */
-const sendWhatsAppUnified = async (toPhone, text, mediaUrl) => {
+const sendWhatsAppUnified = async (toPhone, text, mediaUrl, tenantId) => {
     if (!toPhone) {
         throw new Error("Recipient phone number is required");
     }
     const norm = normalizeToIndianWhatsApp(toPhone);
-    const { status: baileysStatus } = (0, baileysService_1.getConnectionStatus)();
+    const { status: baileysStatus } = (0, baileysService_1.getConnectionStatus)(tenantId);
     // ------------------------------------
     // 🟢 1. BAILEYS (WHATSAPP WEB) FLOW
     // ------------------------------------
@@ -52,10 +52,10 @@ const sendWhatsAppUnified = async (toPhone, text, mediaUrl) => {
         console.log(`📤 Sending via Baileys → ${norm}`);
         let outcome;
         if (mediaUrl) {
-            outcome = await (0, baileysService_1.sendMedia)(norm, mediaUrl, text);
+            outcome = await (0, baileysService_1.sendMedia)(norm, mediaUrl, text, tenantId);
         }
         else {
-            outcome = await (0, baileysService_1.sendText)(norm, text || "");
+            outcome = await (0, baileysService_1.sendText)(norm, text || "", tenantId);
         }
         if (outcome.success) {
             console.log(`✅ Baileys WhatsApp Sent to ${norm}:`, outcome.waMessageId);

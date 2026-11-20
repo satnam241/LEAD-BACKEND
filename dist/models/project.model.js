@@ -45,6 +45,7 @@ const ProjectFAQSchema = new mongoose_1.Schema({
     keywords: [{ type: String, trim: true }],
 }, { _id: false });
 const ProjectSchema = new mongoose_1.Schema({
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     name: { type: String, required: true, trim: true, index: true },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     keywords: [{ type: String, trim: true }],

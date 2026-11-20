@@ -36,14 +36,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPasswordWithToken = exports.adminExportMonthlyReport = exports.getNotifications = exports.adminAdvancedMonthlyReport = exports.getPendingReminderCount = exports.markAsContacted = exports.getReminderLeads = exports.adminGetProfile = exports.importLeadsController = exports.adminStatsSummary = exports.adminDailyStats = exports.adminDeleteLead = exports.adminUpdateLead = exports.adminExportLeads = exports.adminGetLeads = exports.changePasswordLoggedIn = exports.forgotPassword = exports.adminLogin = exports.adminSignup = void 0;
+exports.resetPasswordWithToken = exports.adminExportMonthlyReport = exports.getNotifications = exports.adminAdvancedMonthlyReport = exports.getPendingReminderCount = exports.markAsContacted = exports.getReminderLeads = exports.adminUpdateProfile = exports.adminGetProfile = exports.importLeadsController = exports.adminStatsSummary = exports.adminDailyStats = exports.adminDeleteLead = exports.adminUpdateLead = exports.adminExportLeads = exports.adminGetLeads = exports.changePasswordLoggedIn = exports.forgotPassword = exports.adminLogin = exports.adminSignup = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const json2csv_1 = require("json2csv");
 const admin_model_1 = __importDefault(require("../models/admin.model"));
+// import Tenant from "../models/tenant.model";
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const exceljs_1 = __importDefault(require("exceljs"));
 const xlsx_1 = __importDefault(require("xlsx"));
+const adminAuth_1 = require("../middleware/adminAuth");
 const getEmail = (row) => {
     const possibleKeys = [
         "email", "Email", "EMAIL", "email_address", "Email Address",
@@ -99,11 +101,42 @@ const adminLogin = async (req, res) => {
         const isMatch = await bcryptjs_1.default.compare(password, admin.password);
         if (!isMatch)
             return res.status(400).json({ success: false, error: "Invalid credentials" });
-        const token = jsonwebtoken_1.default.sign({ id: admin._id, role: "admin" }, JWT_SECRET, { expiresIn: "1h" });
+        /*
+        let tenantId = (admin as any).tenantId;
+        if (!tenantId) {
+          const masterTenant = await Tenant.findOne({ isMaster: true });
+          if (masterTenant) {
+            tenantId = masterTenant._id as any;
+            admin.tenantId = masterTenant._id as any;
+            await admin.save();
+          }
+        }
+        */
+        let role = admin.role;
+        if (!role) {
+            role = admin.tenantId ? "tenant_admin" : "super_admin";
+        }
+        const tenantId = admin.tenantId ? String(admin.tenantId) : undefined;
+        const token = jsonwebtoken_1.default.sign({
+            id: admin._id,
+            userId: admin._id,
+            role,
+            tenantId,
+            email: admin.email,
+        }, JWT_SECRET, { expiresIn: "24h" });
         res.json({
             success: true,
             token,
-            admin: { id: admin._id, email: admin.email, name: admin.name }, // ✅ FIX — name add kiya
+            admin: {
+                id: admin._id,
+                _id: admin._id,
+                email: admin.email,
+                name: admin.name,
+                role,
+                tenantId,
+                companyName: admin.companyName || null,
+                status: admin.status || "active",
+            },
         });
     }
     catch (err) {
@@ -169,7 +202,8 @@ exports.changePasswordLoggedIn = changePasswordLoggedIn;
 const adminGetLeads = async (req, res) => {
     try {
         const { page = "1", limit = "10", status, source, search, dateFrom, dateTo, interest, interestLevel, } = req.query;
-        const filter = { isDeleted: false };
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const filter = { isDeleted: false, ...tenantFilter };
         // ✅ FIX: Status filter — accept any case, store lowercase
         if (status)
             filter.status = status.toLowerCase();
@@ -181,7 +215,7 @@ const adminGetLeads = async (req, res) => {
             let matchedLeadIds = [];
             try {
                 const ConversationState = (await Promise.resolve().then(() => __importStar(require("../models/conversationState.model")))).default;
-                const states = await ConversationState.find().lean();
+                const states = await ConversationState.find(tenantFilter).lean();
                 for (const s of states) {
                     const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 1) ? 'hot' : 'warm';
                     if (comp === rawInterest && s.leadId) {
@@ -276,7 +310,8 @@ exports.adminGetLeads = adminGetLeads;
 const adminExportLeads = async (req, res) => {
     try {
         const { format = "xlsx", status, interest, interestLevel } = req.query;
-        const filter = { isDeleted: false };
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const filter = { isDeleted: false, ...tenantFilter };
         if (status && status !== "all")
             filter.status = status.toLowerCase();
         const rawInterest = (interest || interestLevel || "").toLowerCase().trim();
@@ -368,7 +403,8 @@ const adminUpdateLead = async (req, res) => {
         if (Object.keys(setFields).length === 0) {
             return res.status(400).json({ success: false, error: "No fields provided to update" });
         }
-        const lead = await lead_model_1.default.findByIdAndUpdate(id, setFields, { new: true });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, setFields, { new: true });
         if (!lead)
             return res.status(404).json({ success: false, error: "Lead not found" });
         res.json({ success: true, lead });
@@ -383,7 +419,8 @@ exports.adminUpdateLead = adminUpdateLead;
 const adminDeleteLead = async (req, res) => {
     try {
         const { id } = req.params;
-        const lead = await lead_model_1.default.findByIdAndDelete(id);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOneAndDelete({ _id: id, ...tenantFilter });
         if (!lead)
             return res.status(404).json({ success: false, error: "Lead not found" });
         res.json({ success: true, message: "Lead deleted successfully" });
@@ -395,9 +432,11 @@ const adminDeleteLead = async (req, res) => {
 };
 exports.adminDeleteLead = adminDeleteLead;
 // ── Daily Stats ───────────────────────────────────────────────────────────────
-const adminDailyStats = async (_req, res) => {
+const adminDailyStats = async (req, res) => {
     try {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const stats = await lead_model_1.default.aggregate([
+            { $match: { isDeleted: false, ...tenantFilter } },
             {
                 $group: {
                     _id: {
@@ -419,10 +458,11 @@ const adminDailyStats = async (_req, res) => {
 };
 exports.adminDailyStats = adminDailyStats;
 // ── Stats Summary ─────────────────────────────────────────────────────────────
-const adminStatsSummary = async (_req, res) => {
+const adminStatsSummary = async (req, res) => {
     try {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const counts = await lead_model_1.default.aggregate([
-            { $match: { isDeleted: false } },
+            { $match: { isDeleted: false, ...tenantFilter } },
             { $group: { _id: "$status", count: { $sum: 1 } } },
         ]);
         const normalize = (s) => {
@@ -489,8 +529,23 @@ const importLeadsController = async (req, res) => {
                 cleanedRow[key] = cleanUTF16(val);
             return cleanedRow;
         });
+        const tenantId = req.tenantId;
+        if (tenantId) {
+            const { canTenantAddLeads } = await Promise.resolve().then(() => __importStar(require("../services/tenantLimitService")));
+            const check = await canTenantAddLeads(tenantId, cleanedData.length);
+            if (!check.allowed) {
+                return res.status(403).json({
+                    success: false,
+                    error: `Cannot import ${cleanedData.length} leads. Your plan only has ${check.remaining} leads remaining this month (${check.currentCount}/${check.maxLeads}). Please upgrade your plan.`,
+                    remaining: check.remaining,
+                    currentCount: check.currentCount,
+                    maxLeads: check.maxLeads,
+                });
+            }
+        }
         for (const row of cleanedData) {
             await lead_model_1.default.create({
+                tenantId: tenantId || null,
                 fullName: row.fullName || row.name || row["Full Name"] || row["full_name"] || "Unknown User",
                 email: getEmail(row),
                 phone: getPhone(row),
@@ -502,6 +557,15 @@ const importLeadsController = async (req, res) => {
                 rawData: row,
                 receivedAt: new Date(),
             });
+        }
+        if (tenantId) {
+            (async () => {
+                try {
+                    const { checkAndSendLeadLimitNotification } = await Promise.resolve().then(() => __importStar(require("../services/tenantLimitService")));
+                    await checkAndSendLeadLimitNotification(tenantId);
+                }
+                catch { }
+            })();
         }
         return res.json({
             message: "Leads imported successfully",
@@ -517,13 +581,31 @@ const importLeadsController = async (req, res) => {
 exports.importLeadsController = importLeadsController;
 const adminGetProfile = async (req, res) => {
     try {
-        const admin = await admin_model_1.default.findOne().select("-password");
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+        let admin = null;
+        if (token) {
+            try {
+                const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
+                const targetId = decoded.userId || decoded.id;
+                if (targetId)
+                    admin = await admin_model_1.default.findById(targetId).select("-password");
+            }
+            catch { }
+        }
+        if (!admin)
+            admin = await admin_model_1.default.findOne().select("-password");
         if (!admin)
             return res.status(404).json({ success: false, error: "Admin not found" });
         res.json({
             _id: admin._id,
+            id: admin._id,
             name: admin.name || "",
             email: admin.email || "",
+            role: admin.role || "super_admin",
+            tenantId: admin.tenantId || null,
+            companyName: admin.companyName || null,
+            status: admin.status || "active",
             // ✅ Google Calendar status frontend ko bhejna zaroori hai
             googleCalendar: {
                 isConnected: !!(admin.googleCalendar?.refreshToken),
@@ -537,10 +619,42 @@ const adminGetProfile = async (req, res) => {
     }
 };
 exports.adminGetProfile = adminGetProfile;
+// ── Update Admin Profile ──────────────────────────────────────────────────────
+const adminUpdateProfile = async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name || name.trim().length === 0) {
+            return res.status(400).json({ success: false, error: "Name is required" });
+        }
+        const adminId = req.adminId;
+        const filter = adminId ? { _id: adminId } : {};
+        const admin = await admin_model_1.default.findOneAndUpdate(filter, { $set: { name: name.trim() } }, { new: true }).select("-password");
+        if (!admin) {
+            return res.status(404).json({ success: false, error: "Admin not found" });
+        }
+        return res.json({
+            success: true,
+            message: "Admin name updated successfully",
+            admin: {
+                id: admin._id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role || "admin",
+            },
+        });
+    }
+    catch (err) {
+        console.error("Update admin profile error:", err);
+        return res.status(500).json({ success: false, error: "Server error" });
+    }
+};
+exports.adminUpdateProfile = adminUpdateProfile;
 // ── Reminder Leads ────────────────────────────────────────────────────────────
 const getReminderLeads = async (req, res) => {
     try {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const leads = await lead_model_1.default.find({
+            ...tenantFilter,
             reminderCount: { $gt: 0, $lte: 5 },
             status: { $ne: "closed" },
         }).sort({ lastReminderSent: -1 });
@@ -556,7 +670,10 @@ exports.getReminderLeads = getReminderLeads;
 const markAsContacted = async (req, res) => {
     try {
         const { id } = req.params;
-        await lead_model_1.default.findByIdAndUpdate(id, { status: "contacted", reminderCount: 0 });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, { status: "contacted", reminderCount: 0 }, { new: true });
+        if (!lead)
+            return res.status(404).json({ success: false, error: "Lead not found" });
         return res.json({ success: true, message: "Lead marked as contacted" });
     }
     catch (error) {
@@ -568,7 +685,9 @@ exports.markAsContacted = markAsContacted;
 // ── Pending Reminder Count ────────────────────────────────────────────────────
 const getPendingReminderCount = async (req, res) => {
     try {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const count = await lead_model_1.default.countDocuments({
+            ...tenantFilter,
             status: { $ne: "closed" },
             reminderCount: { $gte: 1, $lte: 5 },
         });
@@ -592,36 +711,39 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         const endDate = new Date(year, month, 0, 23, 59, 59, 999);
         const prevStartDate = new Date(year, month - 2, 1, 0, 0, 0, 0);
         const prevEndDate = new Date(year, month - 1, 0, 23, 59, 59, 999);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         // ── QUERIES ───────────────────────────────────────────────────
         // Current month total
         const totalLeadsPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
             createdAt: { $gte: startDate, $lte: endDate },
         });
         // Previous month total
         const previousMonthLeadsPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
             createdAt: { $gte: prevStartDate, $lte: prevEndDate },
         });
         // Current month status breakdown
         const statusCountsPromise = lead_model_1.default.aggregate([
-            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
             { $group: { _id: '$status', count: { $sum: 1 } } },
         ]);
         // ✅ NEW — Previous month status breakdown (for ring chart comparison)
         const prevStatusCountsPromise = lead_model_1.default.aggregate([
-            { $match: { isDeleted: false, createdAt: { $gte: prevStartDate, $lte: prevEndDate } } },
+            { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: prevStartDate, $lte: prevEndDate } } },
             { $group: { _id: '$status', count: { $sum: 1 } } },
         ]);
         // Source wise
         const sourceWisePromise = lead_model_1.default.aggregate([
-            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
             { $group: { _id: '$source', count: { $sum: 1 } } },
             { $sort: { count: -1 } },
         ]);
         // Daily growth
         const dailyGrowthPromise = lead_model_1.default.aggregate([
-            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
             { $group: { _id: { day: { $dayOfMonth: '$createdAt' } }, count: { $sum: 1 } } },
             { $sort: { '_id.day': 1 } },
         ]);
@@ -629,6 +751,7 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         const followupCompletionPromise = lead_model_1.default.aggregate([
             {
                 $match: {
+                    ...tenantFilter,
                     isDeleted: false,
                     'followUp.active': true,
                     createdAt: { $gte: startDate, $lte: endDate },
@@ -638,11 +761,12 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         ]);
         // Lead temperature
         const leadTemperaturePromise = lead_model_1.default.aggregate([
-            { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+            { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
             { $group: { _id: '$leadTemperature', count: { $sum: 1 } } },
         ]);
         // ── ALL-TIME STATS (across all leads in DB) ──────────────────
         const allTimeClosedPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
             status: { $regex: /^(closed|converted)$/i },
         });
@@ -650,15 +774,18 @@ const adminAdvancedMonthlyReport = async (req, res) => {
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         // Overdue follow-ups (day-based: strictly before today, not resolved)
         const allTimeDueFollowupsPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
             'followUp.date': { $ne: null, $lt: startOfToday },
             'followUp.overdueStatus': { $ne: 'resolved' },
         });
         const allTimeTotalLeadsPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
         });
         // ── CONTACTED IN MONTH (action-based: whether lead is old or new) ──
         const contactedInMonthPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
             $or: [
                 { contactedAt: { $gte: startDate, $lte: endDate } },
@@ -673,6 +800,7 @@ const adminAdvancedMonthlyReport = async (req, res) => {
             ],
         });
         const prevContactedInMonthPromise = lead_model_1.default.countDocuments({
+            ...tenantFilter,
             isDeleted: false,
             $or: [
                 { contactedAt: { $gte: prevStartDate, $lte: prevEndDate } },
@@ -794,7 +922,9 @@ const getNotifications = async (req, res) => {
         const in1day = new Date(now.getTime() + 24 * 60 * 60 * 1000);
         const in2days = new Date(now.getTime() + 48 * 60 * 60 * 1000);
         // ── Fetch all relevant leads in one query ─────────────────
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const leads = await lead_model_1.default.find({
+            ...tenantFilter,
             isDeleted: false,
             "followUp.active": true,
             "followUp.date": { $ne: null },
@@ -901,7 +1031,9 @@ const adminExportMonthlyReport = async (req, res) => {
         }
         const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
         const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const leads = await lead_model_1.default.find({
+            ...tenantFilter,
             isDeleted: false,
             createdAt: { $gte: startDate, $lte: endDate },
         }).sort({ createdAt: -1 });

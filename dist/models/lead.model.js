@@ -1,5 +1,4 @@
 "use strict";
-// import mongoose, { Schema, Document, Query } from "mongoose";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -34,131 +33,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// export interface ILead extends Document {
-//   fullName?: string;
-//   email?: string | null;
-//   phone?: string | null;
-//   phoneVerified?: boolean;
-//   source?: string;
-//   formId?: string | null;
-//   whenAreYouPlanningToPurchase?: string | null;
-//   whatIsYourBudget?: string | null;
-//   message?: string;
-//   extraFields?: Record<string, any>;
-//   rawData?: any;
-//   receivedAt?: Date;
-//   createdAt?: Date;
-//   updatedAt?: Date;
-//   // reminder fields
-//   reminderCount?: number;
-//   lastReminderSent?: Date | null;
-//   status?: "new" | "contacted" | "closed"| "lost";
-//   // 🆕 SOFT DELETE
-//   isDeleted?: boolean;
-//   deletedAt?: Date | null;
-//   // 🆕 follow-up
-//   followUp?: {
-//     date?: Date | null;
-//     recurrence?: "once" | "tomorrow" | "3days" | "weekly" | null;
-//     message?: string | null;
-//     whatsappOptIn?: boolean;
-//     active?: boolean;
-//   };
-// }
-// const LeadSchema = new Schema<ILead>(
-//   {
-//     fullName: { type: String, trim: true },
-//     email: {
-//       type: String,
-//       lowercase: true,
-//       trim: true,
-//       index: true,
-//     },
-//     phone: {
-//       type: String,
-//       trim: true,
-//       index: true,
-//     },
-//     phoneVerified: { type: Boolean, default: false },
-//     source: {
-//       type: String,
-//       default: "facebook",
-//       index: true,
-//     },
-//     formId: { type: String, default: null },
-//     whenAreYouPlanningToPurchase: { type: String, default: null },
-//     whatIsYourBudget: { type: String, default: null },
-//     // ✅ SAFE MESSAGE HANDLING
-//     message: {
-//       type: String,
-//       default: "No message provided",
-//       trim: true,
-//     },
-//     extraFields: {
-//       type: Schema.Types.Mixed,
-//       default: {},
-//     },
-//     rawData: {
-//       type: Schema.Types.Mixed,
-//       default: {},
-//     },
-//     receivedAt: {
-//       type: Date,
-//       default: Date.now,
-//     },
-//     // 📊 tracking
-//     reminderCount: { type: Number, default: 0 },
-//     lastReminderSent: { type: Date, default: null },
-//     status: {
-//       type: String,
-//       enum: ["new", "contacted", "closed","lost"],
-//       default: "new",
-//       index: true,
-//     },
-//     // 🗑️ SOFT DELETE
-//     isDeleted: {
-//       type: Boolean,
-//       default: false,
-//       index: true,
-//     },
-//     deletedAt: {
-//       type: Date,
-//       default: null,
-//     },
-//     // 📅 FOLLOW-UP
-//     followUp: {
-//       date: { type: Date, default: null },
-//       recurrence: {
-//         type: String,
-//         enum: ["once", "tomorrow", "3days", "weekly", null],
-//         default: null,
-//       },
-//       message: { type: String, default: null },
-//       whatsappOptIn: { type: Boolean, default: false },
-//       active: { type: Boolean, default: false },
-//     },
-//   },
-//   {
-//     timestamps: true,
-//   }
-// );
-// LeadSchema.pre(/^find/, function (this: Query<any, ILead>, next) {
-//   this.where({
-//     $or: [
-//       { isDeleted: false },
-//       { isDeleted: { $exists: false } }
-//     ]
-//   });
-//   next();
-// });
-// (LeadSchema.query as any).withDeleted = function () {
-//   return this.where({});
-// };
-// LeadSchema.index({ createdAt: -1 });
-// LeadSchema.index({ phone: 1, email: 1 });
-// export default mongoose.model<ILead>("Lead", LeadSchema);
 const mongoose_1 = __importStar(require("mongoose"));
 const LeadSchema = new mongoose_1.Schema({
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     fullName: { type: String, trim: true },
     email: { type: String, lowercase: true, trim: true, index: true },
     phone: { type: String, trim: true, index: true },
@@ -166,7 +43,7 @@ const LeadSchema = new mongoose_1.Schema({
     source: { type: String, default: "facebook", index: true },
     formId: { type: String, default: null },
     formName: { type: String, default: null },
-    projectId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
+    projectId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Project", default: null, index: true },
     whenAreYouPlanningToPurchase: { type: String, default: null },
     whatIsYourBudget: { type: String, default: null },
     message: { type: String, default: "No message provided", trim: true },
@@ -186,9 +63,6 @@ const LeadSchema = new mongoose_1.Schema({
     lastReminderSent: { type: Date, default: null },
     status: {
         type: String,
-        // ✅ FIX — "interested" add kiya, warna save() ya validate() call karne wale
-        // kisi bhi controller (cancelFollowUp, resolveFollowUp, updateLeadController) mein
-        // "interested" status wali leads ke saath ValidationError aata tha
         enum: ["new", "contacted", "interested", "closed", "lost", "negotiation", "visitor"],
         default: "new",
         index: true,
@@ -216,7 +90,7 @@ const LeadSchema = new mongoose_1.Schema({
         rescheduledAt: { type: Date, default: null },
         resolvedAt: { type: Date, default: null },
         googleEventId: { type: String, default: null },
-        notifiedAt: { type: Date, default: null }, // ✅ exact-time notification tracking
+        notifiedAt: { type: Date, default: null },
     },
 }, { timestamps: true });
 LeadSchema.pre(/^find/, function (next) {
@@ -229,5 +103,6 @@ LeadSchema.query.withDeleted = function () {
     return this.where({});
 };
 LeadSchema.index({ createdAt: -1 });
+LeadSchema.index({ tenantId: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("Lead", LeadSchema);
 //# sourceMappingURL=lead.model.js.map

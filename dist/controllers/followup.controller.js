@@ -1,40 +1,4 @@
 "use strict";
-// import { Request, Response } from "express";
-// import Lead from "../models/lead.model";
-// //import FollowUpLog from "../models/followUpLog.model";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -43,8 +7,10 @@ exports.getFollowUpStats = exports.rescheduleFollowUp = exports.resolveFollowUp 
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const followupLog_model_1 = __importDefault(require("../models/followupLog.model"));
 const admin_model_1 = __importDefault(require("../models/admin.model"));
+const tenant_model_1 = __importDefault(require("../models/tenant.model"));
 const googleCalendar_service_1 = require("../services/googleCalendar.service");
 const mongoose_1 = __importDefault(require("mongoose"));
+const adminAuth_1 = require("../middleware/adminAuth");
 const computeNextDate = (recurrence, from) => {
     const base = from ? new Date(from) : new Date();
     switch (recurrence) {
@@ -60,12 +26,30 @@ const computeNextDate = (recurrence, from) => {
     }
     return base;
 };
-// ✅ FIX: scheduleFollowUp — kisi bhi lead pe kaam kare chahe status kuch bhi ho
+// Helper to resolve Google Calendar refresh token for tenant or admin
+async function getRefreshTokenForRequest(req) {
+    try {
+        if (req.tenantId) {
+            const tenant = await tenant_model_1.default.findById(req.tenantId).lean();
+            if (tenant?.googleConfig?.refreshToken && tenant.googleConfig?.isConnected) {
+                return tenant.googleConfig.refreshToken;
+            }
+        }
+        const admin = await admin_model_1.default.findById(req.adminId).lean();
+        if (admin?.googleCalendar?.refreshToken && admin.googleCalendar?.isConnected) {
+            return admin.googleCalendar.refreshToken;
+        }
+    }
+    catch { }
+    return null;
+}
+// ── Schedule Follow-up ────────────────────────────────────────────────────────
 const scheduleFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
         const { recurrence, date, message, whatsappOptIn } = req.body;
-        const lead = await lead_model_1.default.findById(id);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOne({ _id: id, ...tenantFilter });
         if (!lead) {
             return res.status(404).json({ success: false, error: "Lead not found" });
         }
@@ -75,10 +59,8 @@ const scheduleFollowUp = async (req, res) => {
                 error: "Either date or recurrence is required",
             });
         }
-        // ✅ new Date(date) — agar date "yyyy-MM-ddTHH:mm" (datetime-local) format mein aaya
-        // hai to time bhi automatically preserve ho jayega
         const followDate = date ? new Date(date) : computeNextDate(recurrence);
-        await lead_model_1.default.findByIdAndUpdate(id, {
+        await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, {
             $set: {
                 "followUp.date": followDate,
                 "followUp.recurrence": recurrence || "once",
@@ -89,19 +71,17 @@ const scheduleFollowUp = async (req, res) => {
                 "followUp.acknowledgedAt": null,
                 "followUp.rescheduledAt": null,
                 "followUp.resolvedAt": null,
-                "followUp.notifiedAt": null, // ✅ FIX — reset karo taaki naye time pe dobara exact-time alert bhej sake
+                "followUp.notifiedAt": null,
                 ...(message ? { note: message } : {}),
             },
         }, { new: true });
-        // Google Calendar sync (agar available hai)
+        // Google Calendar sync
         try {
-            const Admin = (await Promise.resolve().then(() => __importStar(require("../models/admin.model")))).default;
-            const { createCalendarEvent } = await Promise.resolve().then(() => __importStar(require("../services/googleCalendar.service")));
-            const admin = await Admin.findById(req.adminId);
-            if (admin?.googleCalendar?.refreshToken) {
+            const refreshToken = await getRefreshTokenForRequest(req);
+            if (refreshToken) {
                 const updatedLead = await lead_model_1.default.findById(id);
                 if (updatedLead) {
-                    const event = await createCalendarEvent(admin.googleCalendar.refreshToken, updatedLead);
+                    const event = await (0, googleCalendar_service_1.createCalendarEvent)(refreshToken, updatedLead);
                     if (event?.id) {
                         await lead_model_1.default.findByIdAndUpdate(id, { $set: { "followUp.googleEventId": event.id } });
                     }
@@ -119,30 +99,32 @@ const scheduleFollowUp = async (req, res) => {
         });
     }
     catch (err) {
-        console.error("Schedule follow-up error:", err);
+        console.error("Schedule error:", err);
         return res.status(500).json({ success: false, error: "Server error" });
     }
 };
 exports.scheduleFollowUp = scheduleFollowUp;
-// ✅ Cancel Follow-up
+// ── Cancel Follow-up ──────────────────────────────────────────────────────────
 const cancelFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
-        const lead = await lead_model_1.default.findById(id);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOne({ _id: id, ...tenantFilter });
         if (!lead) {
             return res.status(404).json({ success: false, error: "Lead not found" });
         }
+        // Google Calendar delete
         try {
-            const admin = await admin_model_1.default.findById(req.adminId);
-            if (lead.followUp?.googleEventId && admin?.googleCalendar?.refreshToken) {
-                await (0, googleCalendar_service_1.deleteCalendarEvent)(admin.googleCalendar.refreshToken, lead.followUp.googleEventId);
+            const refreshToken = await getRefreshTokenForRequest(req);
+            if (lead.followUp?.googleEventId && refreshToken) {
+                await (0, googleCalendar_service_1.deleteCalendarEvent)(refreshToken, lead.followUp.googleEventId);
                 console.log("CALENDAR DELETED");
             }
         }
         catch (err) {
             console.log("DELETE ERROR", err);
         }
-        await lead_model_1.default.findByIdAndUpdate(id, {
+        await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, {
             $set: {
                 "followUp.date": null,
                 "followUp.recurrence": null,
@@ -165,10 +147,12 @@ const cancelFollowUp = async (req, res) => {
     }
 };
 exports.cancelFollowUp = cancelFollowUp;
-// ✅ List All Active Follow-ups
-const listFollowUps = async (_req, res) => {
+// ── List All Active Follow-ups ────────────────────────────────────────────────
+const listFollowUps = async (req, res) => {
     try {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const followUps = await lead_model_1.default.find({
+            ...tenantFilter,
             "followUp.active": true,
             "followUp.date": { $ne: null },
         })
@@ -182,12 +166,14 @@ const listFollowUps = async (_req, res) => {
     }
 };
 exports.listFollowUps = listFollowUps;
-// ✅ Upcoming Follow-ups
+// ── Upcoming Follow-ups ───────────────────────────────────────────────────────
 const getUpcomingFollowUps = async (req, res) => {
     try {
         const now = new Date();
         const { search, fromDate, toDate } = req.query;
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const filter = {
+            ...tenantFilter,
             "followUp.active": true,
             "followUp.date": { $gte: now },
         };
@@ -220,14 +206,16 @@ const getUpcomingFollowUps = async (req, res) => {
     }
 };
 exports.getUpcomingFollowUps = getUpcomingFollowUps;
-// ✅ Due Today Follow-ups
-const getDueFollowUps = async (_req, res) => {
+// ── Due Today Follow-ups ──────────────────────────────────────────────────────
+const getDueFollowUps = async (req, res) => {
     try {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date();
         endOfDay.setHours(23, 59, 59, 999);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const due = await lead_model_1.default.find({
+            ...tenantFilter,
             "followUp.active": true,
             "followUp.date": { $gte: startOfDay, $lte: endOfDay },
         })
@@ -241,18 +229,19 @@ const getDueFollowUps = async (_req, res) => {
     }
 };
 exports.getDueFollowUps = getDueFollowUps;
-// ✅ Overdue Follow-ups — Day-based: strictly before today (yesterday or older)
-const getOverdueFollowUps = async (_req, res) => {
+// ── Overdue Follow-ups ────────────────────────────────────────────────────────
+const getOverdueFollowUps = async (req, res) => {
     try {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const overdue = await lead_model_1.default.find({
+            ...tenantFilter,
             "followUp.date": { $ne: null, $lt: startOfDay },
             "followUp.overdueStatus": { $ne: "resolved" },
         })
             .select("fullName phone email followUp note assignedTo assignedBy status createdAt")
             .sort({ "followUp.date": 1 });
-        const now = new Date();
         const data = overdue.map((lead) => {
             const overdueMs = startOfDay.getTime() - new Date(lead.followUp.date).getTime();
             const mins = Math.floor(overdueMs / 60000);
@@ -279,11 +268,12 @@ const getOverdueFollowUps = async (_req, res) => {
     }
 };
 exports.getOverdueFollowUps = getOverdueFollowUps;
-// ✅ Acknowledge — "dekh liya"
+// ── Acknowledge Follow-up ─────────────────────────────────────────────────────
 const acknowledgeFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
-        const lead = await lead_model_1.default.findByIdAndUpdate(id, {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, {
             $set: {
                 "followUp.overdueStatus": "acknowledged",
                 "followUp.acknowledgedAt": new Date(),
@@ -299,15 +289,16 @@ const acknowledgeFollowUp = async (req, res) => {
     }
 };
 exports.acknowledgeFollowUp = acknowledgeFollowUp;
-// ✅ Resolve — follow-up complete, FollowUpLog mein entry
+// ── Resolve Follow-up ─────────────────────────────────────────────────────────
 const resolveFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
         const { note, type = "whatsapp" } = req.body;
-        const lead = await lead_model_1.default.findById(id);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOne({ _id: id, ...tenantFilter });
         if (!lead)
             return res.status(404).json({ success: false, error: "Lead not found" });
-        await lead_model_1.default.findByIdAndUpdate(id, {
+        await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, {
             $set: {
                 "followUp.active": false,
                 "followUp.overdueStatus": "resolved",
@@ -317,17 +308,16 @@ const resolveFollowUp = async (req, res) => {
         });
         const rawId = req.params.id;
         const leadId = Array.isArray(rawId) ? rawId[0] : rawId;
-        if (!mongoose_1.default.Types.ObjectId.isValid(leadId)) {
-            return res.status(400).json({ error: "Invalid lead ID" });
+        if (mongoose_1.default.Types.ObjectId.isValid(leadId)) {
+            await followupLog_model_1.default.create({
+                leadId: new mongoose_1.default.Types.ObjectId(leadId),
+                message: note || lead.followUp?.message || "Follow-up completed",
+                type,
+                status: "sent",
+                scheduledAt: lead.followUp?.date,
+                sentAt: new Date(),
+            });
         }
-        await followupLog_model_1.default.create({
-            leadId: new mongoose_1.default.Types.ObjectId(leadId),
-            message: note || lead.followUp?.message || "Follow-up completed",
-            type,
-            status: "sent",
-            scheduledAt: lead.followUp?.date,
-            sentAt: new Date(),
-        });
         return res.json({ success: true, message: "Follow-up resolved and logged" });
     }
     catch (err) {
@@ -336,34 +326,32 @@ const resolveFollowUp = async (req, res) => {
     }
 };
 exports.resolveFollowUp = resolveFollowUp;
-// ✅ Reschedule — kal ke liye ya custom date
+// ── Reschedule Follow-up ──────────────────────────────────────────────────────
 const rescheduleFollowUp = async (req, res) => {
     try {
         const { id } = req.params;
         const { newDate } = req.body;
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(10, 0, 0, 0);
         const scheduledDate = newDate ? new Date(newDate) : tomorrow;
-        const lead = await lead_model_1.default.findByIdAndUpdate(id, {
+        const lead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, {
             $set: {
                 "followUp.date": scheduledDate,
                 "followUp.active": true,
                 "followUp.overdueStatus": "rescheduled",
                 "followUp.rescheduledAt": new Date(),
-                "followUp.notifiedAt": null, // ✅ FIX — reset karo taaki naye time pe dobara exact-time alert bhej sake
+                "followUp.notifiedAt": null,
             },
         }, { new: true });
         if (!lead) {
-            return res.status(404).json({
-                success: false,
-                error: "Lead not found",
-            });
+            return res.status(404).json({ success: false, error: "Lead not found" });
         }
         try {
-            const admin = await admin_model_1.default.findById(req.adminId);
-            if (lead.followUp?.googleEventId && admin?.googleCalendar?.refreshToken) {
-                await (0, googleCalendar_service_1.updateCalendarEvent)(admin.googleCalendar.refreshToken, lead.followUp.googleEventId, lead);
+            const refreshToken = await getRefreshTokenForRequest(req);
+            if (lead.followUp?.googleEventId && refreshToken) {
+                await (0, googleCalendar_service_1.updateCalendarEvent)(refreshToken, lead.followUp.googleEventId, lead);
                 console.log("CALENDAR UPDATED");
             }
         }
@@ -378,28 +366,29 @@ const rescheduleFollowUp = async (req, res) => {
     }
     catch (err) {
         console.error("Reschedule error:", err);
-        return res.status(500).json({
-            success: false,
-            error: "Server error",
-        });
+        return res.status(500).json({ success: false, error: "Server error" });
     }
 };
 exports.rescheduleFollowUp = rescheduleFollowUp;
-// ✅ Stats — dashboard counts
-const getFollowUpStats = async (_req, res) => {
+// ── Follow-up Stats ───────────────────────────────────────────────────────────
+const getFollowUpStats = async (req, res) => {
     try {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const [overdue, upcoming, resolved] = await Promise.all([
             lead_model_1.default.countDocuments({
+                ...tenantFilter,
                 "followUp.date": { $ne: null, $lt: startOfDay },
                 "followUp.overdueStatus": { $ne: "resolved" },
             }),
             lead_model_1.default.countDocuments({
+                ...tenantFilter,
                 "followUp.active": true,
                 "followUp.date": { $gte: startOfDay },
             }),
             lead_model_1.default.countDocuments({
+                ...tenantFilter,
                 "followUp.overdueStatus": "resolved",
             }),
         ]);

@@ -12,6 +12,7 @@ export interface TemplateDoc extends Document {
   options?: string[]; // interactive choices e.g. ['📅 Rent property', '🏡 Buy property', ...]
   isDefault?: boolean;
   createdBy?: Types.ObjectId;
+  tenantId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,7 +22,6 @@ const templateSchema = new Schema<TemplateDoc>(
     name: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
       lowercase: true,
       match: /^[a-z0-9_]+$/,
@@ -35,9 +35,12 @@ const templateSchema = new Schema<TemplateDoc>(
     type: { type: String, enum: ['text', 'advertise'], default: 'text' },
     options: { type: [String], default: [] },
     isDefault: { type: Boolean, default: false, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );
+
+templateSchema.index({ tenantId: 1, name: 1 }, { unique: true });
 
 export default model<TemplateDoc>('Template', templateSchema);

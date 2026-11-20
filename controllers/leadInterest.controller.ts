@@ -3,6 +3,7 @@ import ConversationState from '../models/conversationState.model';
 import BotFlow from '../models/botFlow.model';
 import Lead from '../models/lead.model';
 import FbForm from '../models/fbForm.model';
+import { getTenantFilter, AuthenticatedRequest } from '../middleware/adminAuth';
 
 export type InterestLevel = 'hot' | 'warm' | 'cold';
 
@@ -23,9 +24,10 @@ export async function listLeadInterest(req: Request, res: Response): Promise<voi
   try {
     const sortBy = (req.query.sortBy as string) || 'interest';
     const now = new Date();
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
 
     const [states, activeStepsCount, manualLeads, fbForms] = await Promise.all([
-      ConversationState.find()
+      ConversationState.find(tenantFilter)
         .populate({
           path: 'leadId',
           select: 'fullName phone email status interestLevel formName formId source projectId followUp note createdAt updatedAt',
@@ -35,12 +37,13 @@ export async function listLeadInterest(req: Request, res: Response): Promise<voi
         .lean(),
       BotFlow.countDocuments({ isActive: true }),
       Lead.find({
+        ...tenantFilter,
         interestLevel: { $in: ['hot', 'warm', 'cold'] },
         isDeleted: { $ne: true },
       })
         .populate('projectId', 'name slug')
         .lean(),
-      FbForm.find().select('formId name').lean(),
+      FbForm.find(tenantFilter).select('formId name').lean(),
     ]);
 
     const formMap = new Map<string, string>();
@@ -190,8 +193,10 @@ export async function listLeadInterest(req: Request, res: Response): Promise<voi
 // GET /api/lead-interest/:leadId — full conversation timeline for one lead
 export async function getLeadInterestById(req: Request, res: Response): Promise<void> {
   try {
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+
     const [state, activeStepsCount, leadDoc, fbForms] = await Promise.all([
-      ConversationState.findOne({ leadId: req.params.leadId })
+      ConversationState.findOne({ leadId: req.params.leadId, ...tenantFilter })
         .sort({ updatedAt: -1 })
         .populate({
           path: 'leadId',
@@ -201,8 +206,8 @@ export async function getLeadInterestById(req: Request, res: Response): Promise<
         .populate('activeProjectId', 'name slug')
         .lean(),
       BotFlow.countDocuments({ isActive: true }),
-      Lead.findById(req.params.leadId).populate('projectId', 'name slug').lean(),
-      FbForm.find().select('formId name').lean(),
+      Lead.findOne({ _id: req.params.leadId, ...tenantFilter }).populate('projectId', 'name slug').lean(),
+      FbForm.find(tenantFilter).select('formId name').lean(),
     ]);
 
     if (!state && !leadDoc) {
@@ -290,8 +295,9 @@ export async function updateLeadInterest(req: Request, res: Response): Promise<v
       return;
     }
 
-    const updatedLead = await Lead.findByIdAndUpdate(
-      leadId,
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const updatedLead = await Lead.findOneAndUpdate(
+      { _id: leadId, ...tenantFilter },
       { interestLevel: level },
       { new: true }
     );

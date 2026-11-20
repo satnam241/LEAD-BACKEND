@@ -1,10 +1,12 @@
-
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import Assignee from "../models/assignee.model";
+import { getTenantFilter, AuthenticatedRequest } from "../middleware/adminAuth";
 
-export const getAssignees = async (_req: Request, res: Response) => {
+export const getAssignees = async (req: Request, res: Response) => {
   try {
-    const assignees = await Assignee.find().sort({ name: 1 });
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const assignees = await Assignee.find(tenantFilter).sort({ name: 1 });
     return res.json({ success: true, data: assignees });
   } catch (err) {
     console.error("Get assignees error:", err);
@@ -19,18 +21,24 @@ export const createAssignee = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: "Name is required" });
     }
     const trimmed = name.trim();
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const tenantId = (req as any).tenantId;
 
-    const existing = await Assignee.findOne({ name: trimmed }).collation({
+    const existing = await Assignee.findOne({ ...tenantFilter, name: trimmed }).collation({
       locale: "en",
       strength: 2,
     });
     if (existing) return res.json({ success: true, data: existing });
 
-    const assignee = await Assignee.create({ name: trimmed });
+    const assignee = await Assignee.create({
+      tenantId: tenantId ? (mongoose.Types.ObjectId.isValid(tenantId) ? new mongoose.Types.ObjectId(tenantId) : tenantId) : null,
+      name: trimmed,
+    });
     return res.status(201).json({ success: true, data: assignee });
   } catch (err: any) {
     if (err.code === 11000) {
-      const existing = await Assignee.findOne({ name: req.body.name?.trim() }).collation({
+      const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+      const existing = await Assignee.findOne({ ...tenantFilter, name: req.body.name?.trim() }).collation({
         locale: "en",
         strength: 2,
       });
@@ -43,7 +51,11 @@ export const createAssignee = async (req: Request, res: Response) => {
 
 export const deleteAssignee = async (req: Request, res: Response) => {
   try {
-    await Assignee.findByIdAndDelete(req.params.id);
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const deleted = await Assignee.findOneAndDelete({ _id: req.params.id, ...tenantFilter });
+    if (!deleted) {
+      return res.status(404).json({ success: false, error: "Assignee not found" });
+    }
     return res.json({ success: true, message: "Assignee removed" });
   } catch (err) {
     console.error("Delete assignee error:", err);

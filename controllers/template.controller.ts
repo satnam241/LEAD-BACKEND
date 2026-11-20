@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Template from '../models/template.model';
+import { getTenantFilter, AuthenticatedRequest } from '../middleware/adminAuth';
 
 const NAME_REGEX = /^[a-z0-9_]+$/;
 
@@ -37,21 +39,25 @@ export async function uploadTemplateImage(req: Request, res: Response): Promise<
   }
 }
 
-export async function listTemplates(_req: Request, res: Response): Promise<void> {
+export async function listTemplates(req: Request, res: Response): Promise<void> {
   try {
-    const templates = await Template.find().sort({ isDefault: -1, createdAt: -1 }).lean();
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const templates = await Template.find(tenantFilter).sort({ isDefault: -1, createdAt: -1 }).lean();
     res.json(templates);
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch templates', error: (err as Error).message });
   }
 }
 
-export async function getDefaultTemplate(_req: Request, res: Response): Promise<void> {
+export async function getDefaultTemplate(req: Request, res: Response): Promise<void> {
   try {
-    let template = await Template.findOne({ isDefault: true }).lean();
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    let template = await Template.findOne({ ...tenantFilter, isDefault: true }).lean();
     if (!template) {
-      // Find one named 'default' or 'welcome' or latest
-      template = await Template.findOne({ name: { $in: ['default', 'welcome', 'default_welcome'] } }).lean();
+      template = await Template.findOne({ ...tenantFilter, name: { $in: ['default', 'welcome', 'default_welcome'] } }).lean();
+    }
+    if (!template) {
+      template = await Template.findOne(tenantFilter).sort({ createdAt: -1 }).lean();
     }
     res.json({ success: true, template });
   } catch (err: any) {
@@ -62,14 +68,15 @@ export async function getDefaultTemplate(_req: Request, res: Response): Promise<
 export async function setDefaultTemplate(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    const template = await Template.findById(id);
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const template = await Template.findOne({ _id: id, ...tenantFilter });
     if (!template) {
       res.status(404).json({ message: 'Template not found' });
       return;
     }
 
-    // Set all others isDefault to false
-    await Template.updateMany({ _id: { $ne: template._id } }, { $set: { isDefault: false } });
+    // Set all others for this tenant to isDefault = false
+    await Template.updateMany({ ...tenantFilter, _id: { $ne: template._id } }, { $set: { isDefault: false } });
     template.isDefault = true;
     await template.save();
 
@@ -100,7 +107,8 @@ export async function createTemplate(req: Request<unknown, unknown, CreateTempla
       return;
     }
 
-    const exists = await Template.findOne({ name });
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const exists = await Template.findOne({ name, ...tenantFilter });
     if (exists) {
       res.status(409).json({ message: `Template "${name}" already exists` });
       return;
@@ -110,10 +118,12 @@ export async function createTemplate(req: Request<unknown, unknown, CreateTempla
     const finalType = type || (imageUrl || header || footer || (options && options.length > 0) ? 'advertise' : 'text');
 
     if (isDefault) {
-      await Template.updateMany({}, { $set: { isDefault: false } });
+      await Template.updateMany(tenantFilter, { $set: { isDefault: false } });
     }
 
+    const tenantId = (req as any).tenantId || null;
     const template = await Template.create({
+      tenantId: tenantId ? (mongoose.Types.ObjectId.isValid(tenantId) ? new mongoose.Types.ObjectId(tenantId) : tenantId) : null,
       name,
       label,
       bodyText,
@@ -134,7 +144,8 @@ export async function createTemplate(req: Request<unknown, unknown, CreateTempla
 export async function updateTemplate(req: Request, res: Response): Promise<void> {
   try {
     const { label, bodyText, variables, header, imageUrl, footer, type, options, isDefault } = req.body;
-    const existing = await Template.findById(req.params.id);
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const existing = await Template.findOne({ _id: req.params.id, ...tenantFilter });
     if (!existing) {
       res.status(404).json({ message: 'Template not found' });
       return;
@@ -162,11 +173,11 @@ export async function updateTemplate(req: Request, res: Response): Promise<void>
     if (isDefault !== undefined) {
       updates.isDefault = !!isDefault;
       if (isDefault) {
-        await Template.updateMany({ _id: { $ne: req.params.id } }, { $set: { isDefault: false } });
+        await Template.updateMany({ ...tenantFilter, _id: { $ne: req.params.id } }, { $set: { isDefault: false } });
       }
     }
 
-    const updated = await Template.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true });
+    const updated = await Template.findOneAndUpdate({ _id: req.params.id, ...tenantFilter }, { $set: updates }, { new: true });
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: 'Failed to update template', error: (err as Error).message });
@@ -175,7 +186,8 @@ export async function updateTemplate(req: Request, res: Response): Promise<void>
 
 export async function deleteTemplate(req: Request, res: Response): Promise<void> {
   try {
-    const deleted = await Template.findByIdAndDelete(req.params.id);
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const deleted = await Template.findOneAndDelete({ _id: req.params.id, ...tenantFilter });
     if (!deleted) {
       res.status(404).json({ message: 'Template not found' });
       return;

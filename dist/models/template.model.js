@@ -5,7 +5,6 @@ const templateSchema = new mongoose_1.Schema({
     name: {
         type: String,
         required: true,
-        unique: true,
         trim: true,
         lowercase: true,
         match: /^[a-z0-9_]+$/,
@@ -19,7 +18,9 @@ const templateSchema = new mongoose_1.Schema({
     type: { type: String, enum: ['text', 'advertise'], default: 'text' },
     options: { type: [String], default: [] },
     isDefault: { type: Boolean, default: false, index: true },
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     createdBy: { type: mongoose_1.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
+templateSchema.index({ tenantId: 1, name: 1 }, { unique: true });
 exports.default = (0, mongoose_1.model)('Template', templateSchema);
 //# sourceMappingURL=template.model.js.map

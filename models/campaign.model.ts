@@ -22,6 +22,7 @@ export interface CampaignDoc extends Document {
   status: CampaignStatus;
   projectId?: Types.ObjectId | null;
   recipientStatuses: RecipientStatusDoc[];
+  tenantId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,6 +45,7 @@ const recipientStatusSchema = new Schema<RecipientStatusDoc>(
 
 const campaignSchema = new Schema<CampaignDoc>(
   {
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     name: { type: String, required: true, trim: true },
     audience: { type: String, required: true },
     template: { type: String, required: true },

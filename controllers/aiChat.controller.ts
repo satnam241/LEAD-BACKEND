@@ -7,6 +7,7 @@ import Project from '../models/project.model';
 import BotFlow from '../models/botFlow.model';
 import LLMTrainingLog from '../models/llmTrainingLog.model';
 import { approveLearnedQuestion, rejectLearnedQuestion, normalizeQuery } from '../services/aiLearningService';
+import { getTenantFilter, AuthenticatedRequest } from '../middleware/adminAuth';
 
 // GET /api/ai-chat/health - Check active LLM provider and queue status
 export async function getAiHealth(_req: Request, res: Response): Promise<void> {
@@ -35,7 +36,8 @@ export async function getAiHealth(_req: Request, res: Response): Promise<void> {
 export async function getLeadMessages(req: Request, res: Response): Promise<void> {
   try {
     const { leadId } = req.params;
-    const messages = await ConversationMessage.find({ leadId }).sort({ createdAt: 1 }).lean();
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const messages = await ConversationMessage.find({ leadId, ...tenantFilter }).sort({ createdAt: 1 }).lean();
     res.json({ success: true, messages });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || 'Failed to fetch conversation transcript' });
@@ -46,8 +48,9 @@ export async function getLeadMessages(req: Request, res: Response): Promise<void
 export async function resumeLeadAi(req: Request, res: Response): Promise<void> {
   try {
     const { leadId } = req.params;
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const state = await ConversationState.findOneAndUpdate(
-      { leadId },
+      { leadId, ...tenantFilter },
       { $set: { aiPaused: false, needsAgent: false } },
       { new: true }
     );
@@ -71,7 +74,8 @@ export async function resumeLeadAi(req: Request, res: Response): Promise<void> {
 export async function getTrainingData(req: Request, res: Response): Promise<void> {
   try {
     const projectId = req.query.projectId as string;
-    let query: any = { isActive: true };
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    let query: any = { isActive: true, ...tenantFilter };
     if (projectId) {
       query._id = projectId;
     }
@@ -505,7 +509,7 @@ export async function exportTrainingLogsJsonl(req: Request, res: Response): Prom
         messages: [
           {
             role: 'system',
-            content: `You are the AI Property Consultant for Bhole Baba Investments Real Estate. Project: ${log.projectName || 'General'}. Respond accurately in ${log.language}.`,
+            content: `You are the AI Property Consultant for ${log.projectName ? `${log.projectName} Real Estate` : 'our Real Estate Advisory'}. Project: ${log.projectName || 'General'}. Respond accurately in ${log.language}.`,
           },
           { role: 'user', content: log.userMessage },
           { role: 'assistant', content: log.aiResponse },

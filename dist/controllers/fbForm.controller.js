@@ -10,17 +10,20 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const project_model_1 = __importDefault(require("../models/project.model"));
+const tenant_model_1 = __importDefault(require("../models/tenant.model"));
 const fetchWithRetry_1 = __importDefault(require("../services/fetchWithRetry"));
-// GET /api/fb-forms - List forms with mapped project and lead counts
-async function listFbForms(_req, res) {
+const adminAuth_1 = require("../middleware/adminAuth");
+// GET /api/fb-forms - List forms with mapped project and lead counts for tenant
+async function listFbForms(req, res) {
     try {
-        const forms = await fbForm_model_1.default.find()
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const forms = await fbForm_model_1.default.find(tenantFilter)
             .populate('projectId', 'name slug')
             .sort({ createdAt: -1 })
             .lean();
-        // Compute lead count per formId
+        // Compute lead count per formId scoped to this tenant
         const leadCounts = await lead_model_1.default.aggregate([
-            { $match: { formId: { $ne: null } } },
+            { $match: { formId: { $ne: null }, ...tenantFilter } },
             { $group: { _id: '$formId', count: { $sum: 1 } } },
         ]);
         const countMap = new Map();
@@ -48,12 +51,22 @@ async function listFbForms(_req, res) {
         res.status(500).json({ success: false, error: err.message || 'Failed to list FB forms' });
     }
 }
-// POST /api/fb-forms/sync - Fetch forms from Meta Graph API and upsert
-async function syncFbForms(_req, res) {
+// POST /api/fb-forms/sync - Fetch forms using tenant's token or global fallback
+async function syncFbForms(req, res) {
     try {
-        const token = process.env.FB_PAGE_ACCESS_TOKEN;
+        let token = process.env.FB_PAGE_ACCESS_TOKEN;
+        const tenantId = req.tenantId;
+        if (tenantId) {
+            const tenant = await tenant_model_1.default.findById(tenantId);
+            if (tenant?.facebookConfig?.pageAccessToken) {
+                token = tenant.facebookConfig.pageAccessToken;
+            }
+        }
         if (!token) {
-            res.status(400).json({ success: false, error: 'FB_PAGE_ACCESS_TOKEN is not configured' });
+            res.status(400).json({
+                success: false,
+                error: 'Facebook Page Access Token is not configured. Please save your Page Access Token in Settings.',
+            });
             return;
         }
         const version = process.env.META_GRAPH_API_VERSION || process.env.FB_GRAPH_VERSION || 'v23.0';
@@ -67,18 +80,23 @@ async function syncFbForms(_req, res) {
             for (const item of data.data) {
                 if (!item.id)
                     continue;
-                // Upsert by formId without overwriting existing projectId or suggestedProject
-                const existing = await fbForm_model_1.default.findOne({ formId: item.id });
+                const existing = await fbForm_model_1.default.findOne({
+                    formId: item.id,
+                    ...(tenantId ? { tenantId } : {}),
+                });
                 if (existing) {
                     existing.name = item.name || existing.name;
                     existing.locale = item.locale || existing.locale;
                     existing.status = item.status || existing.status;
                     existing.lastSyncedAt = new Date();
+                    if (tenantId && !existing.tenantId)
+                        existing.tenantId = tenantId;
                     await existing.save();
                 }
                 else {
                     await fbForm_model_1.default.create({
                         formId: item.id,
+                        tenantId: tenantId || null,
                         name: item.name || 'Untitled Form',
                         locale: item.locale || 'en_US',
                         status: item.status || 'ACTIVE',
@@ -101,30 +119,31 @@ async function syncFbForms(_req, res) {
 async function mapFbForm(req, res) {
     try {
         const { formId } = req.params;
-        const { projectId } = req.body; // string (valid ObjectId) or null
+        const { projectId } = req.body;
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         let targetProjectId = null;
         if (projectId) {
             if (!mongoose_1.default.Types.ObjectId.isValid(projectId)) {
                 res.status(400).json({ success: false, error: 'Invalid projectId' });
                 return;
             }
-            const projectExists = await project_model_1.default.findById(projectId);
+            const projectExists = await project_model_1.default.findOne({ _id: projectId, ...tenantFilter });
             if (!projectExists) {
-                res.status(404).json({ success: false, error: 'Project not found' });
+                res.status(404).json({ success: false, error: 'Project not found or not in your organization' });
                 return;
             }
             targetProjectId = new mongoose_1.default.Types.ObjectId(projectId);
         }
-        const form = await fbForm_model_1.default.findOneAndUpdate({ formId }, { $set: { projectId: targetProjectId, lastSyncedAt: new Date() } }, { new: true }).populate('projectId', 'name slug');
+        const form = await fbForm_model_1.default.findOneAndUpdate({ formId, ...tenantFilter }, { $set: { projectId: targetProjectId, lastSyncedAt: new Date() } }, { new: true }).populate('projectId', 'name slug');
         if (!form) {
             res.status(404).json({ success: false, error: 'Facebook form not found' });
             return;
         }
-        // When a form is mapped, update leads with that formId and no projectId
         let updatedLeadsCount = 0;
         if (targetProjectId) {
             const updateResult = await lead_model_1.default.updateMany({
                 formId,
+                ...tenantFilter,
                 $or: [{ projectId: null }, { projectId: { $exists: false } }],
             }, { $set: { projectId: targetProjectId } });
             updatedLeadsCount = updateResult.modifiedCount || 0;

@@ -3,19 +3,23 @@ import mongoose from 'mongoose';
 import FbForm from '../models/fbForm.model';
 import Lead from '../models/lead.model';
 import Project from '../models/project.model';
+import Tenant from '../models/tenant.model';
 import fetchWithRetry from '../services/fetchWithRetry';
+import { getTenantFilter } from '../middleware/adminAuth';
 
-// GET /api/fb-forms - List forms with mapped project and lead counts
-export async function listFbForms(_req: Request, res: Response): Promise<void> {
+// GET /api/fb-forms - List forms with mapped project and lead counts for tenant
+export async function listFbForms(req: Request, res: Response): Promise<void> {
   try {
-    const forms = await FbForm.find()
+    const tenantFilter = getTenantFilter(req as any);
+
+    const forms = await FbForm.find(tenantFilter)
       .populate('projectId', 'name slug')
       .sort({ createdAt: -1 })
       .lean();
 
-    // Compute lead count per formId
+    // Compute lead count per formId scoped to this tenant
     const leadCounts = await Lead.aggregate([
-      { $match: { formId: { $ne: null } } },
+      { $match: { formId: { $ne: null }, ...tenantFilter } },
       { $group: { _id: '$formId', count: { $sum: 1 } } },
     ]);
 
@@ -46,12 +50,24 @@ export async function listFbForms(_req: Request, res: Response): Promise<void> {
   }
 }
 
-// POST /api/fb-forms/sync - Fetch forms from Meta Graph API and upsert
-export async function syncFbForms(_req: Request, res: Response): Promise<void> {
+// POST /api/fb-forms/sync - Fetch forms using tenant's token or global fallback
+export async function syncFbForms(req: Request, res: Response): Promise<void> {
   try {
-    const token = process.env.FB_PAGE_ACCESS_TOKEN;
+    let token = process.env.FB_PAGE_ACCESS_TOKEN;
+    const tenantId = (req as any).tenantId;
+
+    if (tenantId) {
+      const tenant = await Tenant.findById(tenantId);
+      if (tenant?.facebookConfig?.pageAccessToken) {
+        token = tenant.facebookConfig.pageAccessToken;
+      }
+    }
+
     if (!token) {
-      res.status(400).json({ success: false, error: 'FB_PAGE_ACCESS_TOKEN is not configured' });
+      res.status(400).json({
+        success: false,
+        error: 'Facebook Page Access Token is not configured. Please save your Page Access Token in Settings.',
+      });
       return;
     }
 
@@ -68,17 +84,22 @@ export async function syncFbForms(_req: Request, res: Response): Promise<void> {
       for (const item of data.data) {
         if (!item.id) continue;
 
-        // Upsert by formId without overwriting existing projectId or suggestedProject
-        const existing = await FbForm.findOne({ formId: item.id });
+        const existing = await FbForm.findOne({
+          formId: item.id,
+          ...(tenantId ? { tenantId } : {}),
+        });
+
         if (existing) {
           existing.name = item.name || existing.name;
           existing.locale = item.locale || existing.locale;
           existing.status = item.status || existing.status;
           existing.lastSyncedAt = new Date();
+          if (tenantId && !existing.tenantId) existing.tenantId = tenantId;
           await existing.save();
         } else {
           await FbForm.create({
             formId: item.id,
+            tenantId: tenantId || null,
             name: item.name || 'Untitled Form',
             locale: item.locale || 'en_US',
             status: item.status || 'ACTIVE',
@@ -103,7 +124,8 @@ export async function syncFbForms(_req: Request, res: Response): Promise<void> {
 export async function mapFbForm(req: Request, res: Response): Promise<void> {
   try {
     const { formId } = req.params;
-    const { projectId } = req.body; // string (valid ObjectId) or null
+    const { projectId } = req.body;
+    const tenantFilter = getTenantFilter(req as any);
 
     let targetProjectId: mongoose.Types.ObjectId | null = null;
     if (projectId) {
@@ -111,16 +133,16 @@ export async function mapFbForm(req: Request, res: Response): Promise<void> {
         res.status(400).json({ success: false, error: 'Invalid projectId' });
         return;
       }
-      const projectExists = await Project.findById(projectId);
+      const projectExists = await Project.findOne({ _id: projectId, ...tenantFilter });
       if (!projectExists) {
-        res.status(404).json({ success: false, error: 'Project not found' });
+        res.status(404).json({ success: false, error: 'Project not found or not in your organization' });
         return;
       }
       targetProjectId = new mongoose.Types.ObjectId(projectId);
     }
 
     const form = await FbForm.findOneAndUpdate(
-      { formId },
+      { formId, ...tenantFilter },
       { $set: { projectId: targetProjectId, lastSyncedAt: new Date() } },
       { new: true }
     ).populate('projectId', 'name slug');
@@ -130,12 +152,12 @@ export async function mapFbForm(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // When a form is mapped, update leads with that formId and no projectId
     let updatedLeadsCount = 0;
     if (targetProjectId) {
       const updateResult = await Lead.updateMany(
         {
           formId,
+          ...tenantFilter,
           $or: [{ projectId: null }, { projectId: { $exists: false } }],
         },
         { $set: { projectId: targetProjectId } }

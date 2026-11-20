@@ -30,9 +30,14 @@ const botFlow_routes_1 = __importDefault(require("./routes/botFlow.routes"));
 const project_routes_1 = __importDefault(require("./routes/project.routes"));
 const fbForm_routes_1 = __importDefault(require("./routes/fbForm.routes"));
 const aiChat_routes_1 = __importDefault(require("./routes/aiChat.routes"));
+const plan_routes_1 = __importDefault(require("./routes/plan.routes"));
+const saasAuth_routes_1 = __importDefault(require("./routes/saasAuth.routes"));
+const tenantSettings_routes_1 = __importDefault(require("./routes/tenantSettings.routes"));
+const superAdmin_routes_1 = __importDefault(require("./routes/superAdmin.routes"));
 const admin_controller_1 = require("./controllers/admin.controller");
 const adminAuth_1 = require("./middleware/adminAuth");
 const automatedLlmTrainingService_1 = require("./services/automatedLlmTrainingService");
+const security_middleware_1 = require("./middleware/security.middleware");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const app = (0, express_1.default)();
@@ -51,8 +56,8 @@ app.use((req, res, next) => {
     res.setHeader("X-XSS-Protection", "1; mode=block");
     next();
 });
-// ✅ Enable CORS before static assets & API routes
-app.use((0, cors_1.default)({ origin: true, credentials: true }));
+// ✅ Enable CORS before static assets & API routes (Strict Whitelist in Prod)
+app.use((0, cors_1.default)({ origin: (0, security_middleware_1.getCorsOriginDelegate)(), credentials: true }));
 const staticOptions = {
     dotfiles: "deny",
     maxAge: "1d",
@@ -70,6 +75,8 @@ app.use("/public", express_1.default.static(path_1.default.join(process.cwd(), "
 app.use("/api/public", express_1.default.static(path_1.default.join(process.cwd(), "public"), staticOptions));
 app.use(express_1.default.json({ limit: "10mb" }));
 app.use(express_1.default.urlencoded({ extended: true }));
+// 🛡️ Global NoSQL Injection Sanitizer
+app.use(security_middleware_1.noSqlSanitizer);
 app.get("/", (_req, res) => {
     res.send("🚀 Facebook Webhook API Live!");
 });
@@ -98,9 +105,15 @@ app.use('/api/bot-flow', botFlow_routes_1.default);
 app.use('/api/projects', project_routes_1.default);
 app.use('/api/fb-forms', fbForm_routes_1.default);
 app.use('/api/ai-chat', aiChat_routes_1.default);
+// 🏢 SaaS Multi-Tenancy Routes
+app.use('/api/plans', plan_routes_1.default);
+app.use('/api/saas', saasAuth_routes_1.default);
+app.use('/api/tenant', tenantSettings_routes_1.default);
+app.use('/api/super-admin', superAdmin_routes_1.default);
 app.get('/api/notifications', adminAuth_1.adminAuth, admin_controller_1.getNotifications);
 // ✅ PROPER SERVER START
 const startServer = async () => {
+    (0, security_middleware_1.auditSecurityConfig)();
     await (0, DB_1.connectDB)(); // DB ready hone do
     console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
     console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
@@ -109,6 +122,7 @@ const startServer = async () => {
     console.log(`🤖 AI Engine: Active Provider = ${activeLLM.provider.toUpperCase()} (${activeLLM.model})`);
     (0, chatbotService_1.registerChatbot)();
     (0, baileysService_1.startWhatsApp)();
+    (0, baileysService_1.startAllConnectedTenantSessions)().catch(err => console.error('[Baileys] Error starting tenant sessions:', err));
     (0, followupNotifier_1.startFollowupNotifier)();
     (0, automatedLlmTrainingService_1.startAutomatedTrainingScheduler)();
     const PORT = process.env.PORT || 4520;

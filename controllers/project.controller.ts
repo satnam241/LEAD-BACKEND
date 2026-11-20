@@ -1,20 +1,24 @@
 import { Request, Response } from 'express';
 import Project from '../models/project.model';
+import Tenant from '../models/tenant.model';
+import { getTenantFilter } from '../middleware/adminAuth';
 
-// GET /api/projects - List all projects
-export async function listProjects(_req: Request, res: Response): Promise<void> {
+// GET /api/projects - List all projects for authenticated tenant
+export async function listProjects(req: Request, res: Response): Promise<void> {
   try {
-    const projects = await Project.find().sort({ createdAt: -1 }).lean();
+    const filter = getTenantFilter(req as any);
+    const projects = await Project.find(filter).sort({ createdAt: -1 }).lean();
     res.json({ success: true, projects });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || 'Failed to list projects' });
   }
 }
 
-// GET /api/projects/:id - Get single project by ID
+// GET /api/projects/:id - Get single project by ID (tenant scoped)
 export async function getProjectById(req: Request, res: Response): Promise<void> {
   try {
-    const project = await Project.findById(req.params.id).lean();
+    const filter = { _id: req.params.id, ...getTenantFilter(req as any) };
+    const project = await Project.findOne(filter).lean();
     if (!project) {
       res.status(404).json({ success: false, error: 'Project not found' });
       return;
@@ -25,9 +29,24 @@ export async function getProjectById(req: Request, res: Response): Promise<void>
   }
 }
 
-// POST /api/projects - Create a new project
+// POST /api/projects - Create a new project with subscription limit verification
 export async function createProject(req: Request, res: Response): Promise<void> {
   try {
+    const tenantId = (req as any).tenantId;
+
+    // Check tenant project limits via centralized Limit Service
+    if (tenantId) {
+      const { canTenantAddProject } = await import("../services/tenantLimitService");
+      const check = await canTenantAddProject(tenantId);
+      if (!check.allowed) {
+        res.status(403).json({
+          success: false,
+          error: check.error,
+        });
+        return;
+      }
+    }
+
     const {
       name,
       slug,
@@ -65,9 +84,10 @@ export async function createProject(req: Request, res: Response): Promise<void> 
       ? slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
       : name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
-    const existing = await Project.findOne({ slug: finalSlug });
+    const tenantFilter = getTenantFilter(req as any);
+    const existing = await Project.findOne({ slug: finalSlug, ...tenantFilter });
     if (existing) {
-      res.status(400).json({ success: false, error: 'A project with this slug or name already exists' });
+      res.status(400).json({ success: false, error: 'A project with this slug or name already exists in your account' });
       return;
     }
 
@@ -76,6 +96,7 @@ export async function createProject(req: Request, res: Response): Promise<void> 
     const project = await Project.create({
       name: name.trim(),
       slug: finalSlug,
+      tenantId: tenantId || null,
       keywords: Array.isArray(keywords) ? keywords.map((k: string) => k.trim()) : [],
       summary: summary || '',
       location: location || '',
@@ -109,7 +130,8 @@ export async function createProject(req: Request, res: Response): Promise<void> 
 export async function uploadProjectMedia(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    const project = await Project.findById(id);
+    const filter = { _id: id, ...getTenantFilter(req as any) };
+    const project = await Project.findOne(filter);
     if (!project) {
       res.status(404).json({ success: false, error: 'Project not found' });
       return;
@@ -136,7 +158,6 @@ export async function uploadProjectMedia(req: Request, res: Response): Promise<v
       }
     }
 
-    // Also support passing direct URLs in body (e.g. hosted links)
     const { images, image, videos, video, map, brochure, locationUrl, locationLink, googleMapsUrl } = req.body;
     const directImages = images || image;
     if (directImages) {
@@ -175,7 +196,8 @@ export async function deleteProjectMedia(req: Request, res: Response): Promise<v
   try {
     const { id } = req.params;
     const { type, url } = req.body;
-    const project = await Project.findById(id);
+    const filter = { _id: id, ...getTenantFilter(req as any) };
+    const project = await Project.findOne(filter);
     if (!project) {
       res.status(404).json({ success: false, error: 'Project not found' });
       return;
@@ -203,6 +225,7 @@ export async function updateProject(req: Request, res: Response): Promise<void> 
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
+    const tenantFilter = getTenantFilter(req as any);
 
     const locLink = updateData.locationUrl || updateData.locationLink || updateData.googleMapsUrl;
     if (locLink !== undefined) {
@@ -211,14 +234,14 @@ export async function updateProject(req: Request, res: Response): Promise<void> 
 
     if (updateData.slug) {
       updateData.slug = updateData.slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
-      const conflict = await Project.findOne({ slug: updateData.slug, _id: { $ne: id } });
+      const conflict = await Project.findOne({ slug: updateData.slug, _id: { $ne: id }, ...tenantFilter });
       if (conflict) {
         res.status(400).json({ success: false, error: 'Slug is already used by another project' });
         return;
       }
     }
 
-    const project = await Project.findByIdAndUpdate(id, updateData, { new: true });
+    const project = await Project.findOneAndUpdate({ _id: id, ...tenantFilter }, updateData, { new: true });
     if (!project) {
       res.status(404).json({ success: false, error: 'Project not found' });
       return;
@@ -234,7 +257,8 @@ export async function updateProject(req: Request, res: Response): Promise<void> 
 export async function deactivateProject(req: Request, res: Response): Promise<void> {
   try {
     const { id } = req.params;
-    const project = await Project.findById(id);
+    const tenantFilter = getTenantFilter(req as any);
+    const project = await Project.findOne({ _id: id, ...tenantFilter });
     if (!project) {
       res.status(404).json({ success: false, error: 'Project not found' });
       return;

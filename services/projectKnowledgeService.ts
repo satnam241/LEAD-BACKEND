@@ -110,15 +110,15 @@ export interface LanguageContext {
 // Distinct Roman Hindi tokens that NEVER collide with valid English words
 const DISTINCT_HINGLISH_TOKENS = new Set([
   'kya', 'hai', 'hain', 'h', 'hn', 'haan', 'ha', 'han', 'mein', 'main', 'kitna', 'kitne', 'kitni',
-  'kahan', 'kaha', 'batao', 'batayein', 'bataiye', 'batado', 'bata', 'btao', 'bta', 'chahiye',
+  'kahan', 'kaha', 'kha', 'batao', 'batayein', 'bataiye', 'batado', 'bata', 'btao', 'bta', 'chahiye',
   'chahie', 'hoga', 'hogi', 'honge', 'karna', 'karein', 'kare', 'krna', 'kro', 'karo', 'kaise',
   'kese', 'accha', 'achha', 'theek', 'thik', 'sasta', 'saste', 'mehenga', 'mehenge', 'paas', 'pas',
   'bhi', 'kuch', 'kuj', 'bhejo', 'bhejiye', 'bhej', 'dekho', 'dekhna', 'dekh', 'dekhein', 'kr',
-  'nhi', 'nahi', 'na', 'raha', 'rahi', 'rahe', 'rha', 'rhi', 'rhe', 'humein', 'hume', 'humara',
+  'nhi', 'nahi', 'raha', 'rahi', 'rahe', 'rha', 'rhi', 'rhe', 'humein', 'hume', 'humara',
   'humari', 'humare', 'aapko', 'aapke', 'aapka', 'aapki', 'aap', 'mujhe', 'mujhko', 'mera', 'meri',
-  'mere', 'kaun', 'konsa', 'konsi', 'kaunsa', 'kaunsi', 'kon', 'yaar', 'yr', 'dost', 'bolo', 'bol',
+  'mere', 'kaun', 'konsa', 'konsi', 'kaunsa', 'kaunsi', 'kon', 'bolo', 'bol',
   'bole', 'bolna', 'karwa', 'karwana', 'subah', 'shaam', 'sham', 'dopahar', 'raat', 'chhat',
-  'gaadi', 'gadi', 'bache', 'bachon', 'pata', 'dhanyawad', 'shukriya', 'namaste', 'pranam', 'apna',
+  'gaadi', 'gadi', 'bache', 'bachon', 'pata', 'dhanyawad', 'shukriya', 'pranam', 'apna',
   'apne', 'apni', 'isme', 'isse', 'ise', 'usse', 'unhe', 'unko', 'iska', 'iski', 'iske',
   'uska', 'uski', 'uske', 'inka', 'inki', 'inke', 'unka', 'unki', 'unke', 'ab', 'abhi', 'kab',
   'kbtak', 'kabtak', 'fir', 'phir', 'baad', 'pehle', 'pahle', 'thoda', 'thodi', 'bohot', 'bahut',
@@ -129,14 +129,41 @@ const DISTINCT_HINGLISH_TOKENS = new Set([
   'milna', 'milega', 'milegi', 'samjh', 'samjha', 'samjho', 'pooch', 'poochho', 'poochna', 'puch',
   'puchho', 'puchna', 'baat', 'baatcheet', 'batcheet', 'kyu', 'kyun', 'kyunki', 'kyuki', 'kyuuki',
   'aisi', 'aisa', 'aise', 'waise', 'waisa', 'yahan', 'yahin', 'wahan', 'wahin', 'idhar', 'udhar',
-  'kidhar', 'log', 'logon', 'bhai', 'bhaiya', 'bro', 'sirji', 'saheb', 'sab', 'sabhi', 'sabse',
+  'kidhar', 'log', 'logon', 'bhai', 'bhaiya', 'sab', 'sabhi', 'sabse',
   'aage', 'peeche', 'samne', 'saamne', 'beech', 'taraf', 'tarikh', 'tareekh', 'baje', 'ghante',
   'mahina', 'saal', 'zameen', 'jameen', 'makan', 'makaan', 'kothi', 'kiraya', 'khareed', 'khareedna',
   'bikau', 'khareeddar', 'naya', 'nayi', 'naye', 'purana', 'purani', 'purane', 'suvidha',
   'suvidhayein', 'rasta', 'raasta', 'raste', 'sadak', 'naksha', 'bijli', 'paani', 'pani', 'kabza',
   'registry', 'kist', 'kisht', 'byaj', 'byaaj', 'chhoot', 'daam', 'bhao', 'bhav', 'bdda', 'bada',
-  'chota', 'chhota', 'krrha', 'bataye', 'gandu'
+  'chota', 'chhota', 'krrha', 'bataye'
 ]);
+
+// Full Hinglish sentence patterns where the buyer asks a proper question/sentence in Hinglish
+const HINGLISH_FULL_SENTENCE_PATTERNS = [
+  // "ye property kha pe h", "ye flat kahan pe hai", "ye project kidhar hai", "property kaha par h"
+  /\b(ye|yeh|wo|woh|iska|iski|iske|project|property|flat)\b.*\b(kha|kaha|kahan|kidhar)\s*(pe|par)?\s*(h|hai|hain)?\b/i,
+  // "kaha pe h", "kahan pe hai", "kidhar h", "kha pe hai"
+  /\b(kaha|kahan|kha|kidhar)\s*(pe|par)\s*(h|hai|hain)\b/i,
+  // "kitne ka h", "kitne ka padega", "kya rate hai", "price kya hai", "rate kya h"
+  /\b(kitne|kitna)\s*(ka|ki|me|mein)\s*(h|hai|padega|milega)\b/i,
+  /\b(kya|kya\s+hi)\s+(rate|price|cost|budget|daam)\s+(h|hai|hain)\b/i,
+  /\b(rate|price|cost|daam)\s+(kya|kitna)\s+(h|hai|hain)\b/i,
+  // "kya isme parking hai", "car parking milegi kya"
+  /\b(kya\s+isme|isme\s+kya|kya\s+yahan|yahan\s+kya)\b/i,
+  /\b(milega|milegi|mil\s+jayega|chalega)\s+(kya|bhai|sir)\b/i,
+  // "mujhe dekhna hai", "flat chahiye", "lena hai"
+  /\b(mujhe|hume|humko|humne)\s+.*(chahiye|lena\s+hai|dekhna\s+hai|visit\s+karna|khareedna)\b/i,
+  // "site visit kab hoga", "visit kab kar sakte hai"
+  /\b(visit|site\s+visit)\s+.*(kab|kbtak|kese|kaise)\s*(hoga|kar\s+sakte|karein|chalein|h)?\b/i,
+  // "baat karni hai", "call karo bhai"
+  /\b(baat\s+karni\s+hai|call\s+karo\s+bhai|phone\s+karo)\b/i,
+  // "details bhej do", "location bhej do na", "brochure send kr do"
+  /\b(details|brochure|location|photos|video)\s+(bhej\s+(do|de|du|dijiye|na)|send\s+(karo|krdo|kr\s*do|kro))\b/i,
+  // "batao na bhai", "bataiye na sir"
+  /\b(batao|batado|bataiye|bta\s+do)\s+(na|bhai|sirji)\b/i,
+  // "kaisa project hai", "kaisa flat hai"
+  /\b(kaisa|kese|kaise)\s+(project|flat|area|builder|society)\s+(h|hai|hain)\b/i,
+];
 
 // Common Hinglish compound phrases that immediately confirm Hinglish
 const HINGLISH_PHRASES_REGEX = /\b(kya\s+hai|kitna\s+hai|kaha\s+hai|kahan\s+hai|batao\s+na|bhej\s+(do|du|de|na)|bhejo\s+na|send\s+(karo|kr\s*do|kardo|krna)|share\s+(karo|kr\s*do|kardo)|batado|bata\s+(do|du|de)|bta\s+(do|du|de)|bataiye|call\s+(karo|krna|karna)|baat\s+(karni|kr|krrha|kre|kare)|kab\s+tak|kab\s+milega|kaisa\s+hai|kya\s+rate|rate\s+kya|price\s+kya|kuch\s+discount|kitne\s+ka|details\s+(do|de\s*do|de)|brochure\s+(do|de\s*do|de)|location\s+(do|bhejo|send\s+karo)|visit\s+(karna|krna)|dekhna\s+hai|lena\s+hai|chahiye|kar\s+(do|du|de)|kr\s+(do|du|de)|ha\s+bhai|haan\s+bhai|kya\s+scene\s+hai|chalega\s+kya|milega\s+kya|kr\s+rha|krrha\s+h|hisab\s+se|hisaab\s+se|mat\s+karo|nhi\s+chahiye|nahi\s+chahiye|answer\s+kre|ans\s+kre|fix\s+kro)\b/i;
@@ -154,13 +181,15 @@ const DEFINITE_ENGLISH_WORDS = new Set([
 ]);
 
 /**
- * Intelligent Language Detector with Conversation History Memory:
- * 1. Checks pure Hindi (Devanagari script)
- * 2. Checks explicit language requests (e.g. "talk in english", "hindi me batao")
- * 3. Checks definitive Hinglish words & phrases
- * 4. Checks definitive English sentence grammar
- * 5. For ambiguous/short/loan-word messages (e.g. "ok", "yes", "send location", "brochure", "site visit"):
- *    Retains the conversation's active preferredLanguage or inspects old chat history!
+ * Intelligent Language Detector:
+ * Ruleset:
+ * 1. Default is ALWAYS pure, polished English.
+ * 2. Pure Hindi (Devanagari script) -> 'hindi'
+ * 3. Definite English grammatical sentence -> 'english'
+ * 4. Short / Single / Greeting keywords (e.g. "hi", "ok", "yes", "bro", "price", "location", "details", "brochure", "site visit", "2bhk")
+ *    NEVER trigger Hinglish -> 'english'
+ * 5. Full Hinglish sentence / distinct query (e.g. "ye proprty kha pe h", "kya rate hai bhai", "mujhe 2bhk flat chahiye")
+ *    -> Dynamically decodes to 'hinglish' so AI can answer in the user's natural language!
  */
 export function detectLanguage(
   text: string,
@@ -179,7 +208,7 @@ export function detectLanguage(
 
   const rawLower = text.toLowerCase().trim();
 
-  // 2. Explicit Language Directive from User (e.g. "talk in english", "hindi me batao")
+  // 2. Explicit Language Directive from User
   if (
     /^(please\s+)?(speak|talk|write|reply|converse)\s+in\s+english\b/i.test(rawLower) ||
     /^(please\s+)?(in\s+english|english\s+please|english\s+plz)\b/i.test(rawLower) ||
@@ -195,27 +224,35 @@ export function detectLanguage(
     return 'hinglish';
   }
 
-  // 3. Opening Greetings Check — First greeting is ALWAYS in English
-  if (/^(hello|hi|hey|hii|helo|hlo|namaste|good\s+morning|good\s+afternoon|good\s+evening|greetings|start)(\s+(sir|ji|mam|team|bro|bhaiya|bhai))?$/i.test(rawLower)) {
-    const preferredLang = typeof context === 'string'
-      ? context
-      : (context && context.preferredLanguage) || null;
-    if (preferredLang) return preferredLang;
+  // 3. Definite English Sentences ALWAYS return English
+  if (DEFINITE_ENGLISH_PHRASES_REGEX.test(rawLower)) {
     return 'english';
   }
 
-  // 4. Check for Definitive Hinglish Phrases & Tokens
+  // 4. Short / Single Query / Greetings (1 or 2 words) -> ALWAYS return English
+  // E.g.: "hi", "hello", "ok", "yes", "sure", "bro", "price", "location", "details", "brochure", "site visit", "2bhk"
+  const words = rawLower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (words.length <= 2) {
+    // If it's a 2-word explicit Hindi question like "kaha hai" or "kitna hai"
+    if (/\b(kaha\s+hai|kahan\s+hai|kha\s+pe|kitna\s+hai|kya\s+hai)\b/i.test(rawLower)) {
+      return 'hinglish';
+    }
+    return 'english';
+  }
+
+  // 5. Full Hinglish Sentence Patterns Check (e.g. "ye proprty kha pe h", "kya rate hai bhai")
+  for (const pattern of HINGLISH_FULL_SENTENCE_PATTERNS) {
+    if (pattern.test(rawLower)) {
+      return 'hinglish';
+    }
+  }
+
   if (HINGLISH_PHRASES_REGEX.test(rawLower)) {
     return 'hinglish';
   }
 
-  const words = rawLower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
-  if (words.length === 0) {
-    if (typeof context === 'string') return context;
-    if (context && context.preferredLanguage) return context.preferredLanguage;
-    return 'english';
-  }
-
+  // 6. Multi-word Syntactic Hinglish Check:
+  // Requires at least 3 words AND at least 2 distinct Hinglish grammatical tokens
   let hinglishCount = 0;
   let definiteEnglishCount = 0;
 
@@ -224,45 +261,11 @@ export function detectLanguage(
     if (DEFINITE_ENGLISH_WORDS.has(w)) definiteEnglishCount++;
   }
 
-  // If ANY distinct Hinglish token is present (e.g. "isme", "bhi", "batao", "hai", "kr")
-  if (hinglishCount > 0 && hinglishCount >= definiteEnglishCount) {
+  if (words.length >= 3 && hinglishCount >= 2 && hinglishCount >= definiteEnglishCount) {
     return 'hinglish';
   }
 
-  // 5. Check for Definitive English Sentence Grammar
-  const hasDefiniteEnglishPhrase = DEFINITE_ENGLISH_PHRASES_REGEX.test(rawLower);
-  if (hasDefiniteEnglishPhrase || (definiteEnglishCount >= 1 && hinglishCount === 0)) {
-    return 'english';
-  }
-
-  // 5. Ambiguous / Short / Loan-Word Messages (e.g. "ok", "yes", "send location", "brochure", "site visit", "price")
-  // RESOLVE FROM OLD CHAT / CONVERSATION HISTORY!
-  const preferredLang = typeof context === 'string'
-    ? context
-    : (context && context.preferredLanguage) || null;
-
-  if (preferredLang) {
-    return preferredLang;
-  }
-
-  // Inspect chat history if provided
-  const history = (context && typeof context === 'object' && Array.isArray(context.history)) ? context.history : [];
-  if (history.length > 0) {
-    // Scan previous user messages in reverse to find established language
-    for (let i = history.length - 1; i >= 0; i--) {
-      const msg = history[i];
-      if (msg.role === 'user' && msg.content && msg.content.trim()) {
-        const pastLower = msg.content.toLowerCase();
-        if (/[\u0900-\u097F]/.test(pastLower)) return 'hindi';
-        if (HINGLISH_PHRASES_REGEX.test(pastLower)) return 'hinglish';
-        const pastWords = pastLower.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean);
-        if (pastWords.some(w => DISTINCT_HINGLISH_TOKENS.has(w))) return 'hinglish';
-        if (DEFINITE_ENGLISH_PHRASES_REGEX.test(pastLower)) return 'english';
-      }
-    }
-  }
-
-  // Default to English! First message always in English!
+  // 7. Default to pure professional English
   return 'english';
 }
 
@@ -350,16 +353,30 @@ export function findDirectFaqAnswer(project: any, userMessage: string): string |
  */
 export async function findCrossSellProject(
   currentProjectId: string | mongoose.Types.ObjectId,
-  budgetStr: string
+  budgetStr: string,
+  tenantId?: string | mongoose.Types.ObjectId | null
 ): Promise<any | null> {
   try {
     const budgetLakhs = parsePriceToLakhs(budgetStr);
     if (!budgetLakhs) return null;
 
-    const otherProjects = await Project.find({
+    let targetTenantId = tenantId;
+    if (targetTenantId === undefined && currentProjectId) {
+      const currentProj = await Project.findById(currentProjectId).select('tenantId').lean();
+      if (currentProj?.tenantId) {
+        targetTenantId = currentProj.tenantId;
+      }
+    }
+
+    const query: any = {
       _id: { $ne: currentProjectId },
       isActive: true,
-    }).lean();
+    };
+    if (targetTenantId !== undefined && targetTenantId !== null) {
+      query.tenantId = targetTenantId;
+    }
+
+    const otherProjects = await Project.find(query).lean();
 
     for (const proj of otherProjects) {
       const projPriceLakhs = parsePriceToLakhs(proj.priceRange || '');
@@ -384,14 +401,23 @@ export async function findCrossSellProject(
 
 /**
  * Dynamically queries all active properties from MongoDB to provide a live portfolio catalogue
- * NO static / hardcoded data - everything loaded directly from database.
+ * NO static / hardcoded data - everything loaded directly from database scoped strictly by tenant.
  */
 export async function getDynamicPortfolioCatalogue(
-  excludeProjectId?: string | mongoose.Types.ObjectId
+  excludeProjectId?: string | mongoose.Types.ObjectId,
+  tenantId?: string | mongoose.Types.ObjectId | null
 ): Promise<string> {
   const query: any = { isActive: true };
   if (excludeProjectId) {
     query._id = { $ne: excludeProjectId };
+  }
+  if (tenantId !== undefined && tenantId !== null) {
+    query.tenantId = tenantId;
+  } else if (excludeProjectId) {
+    const currentProj = await Project.findById(excludeProjectId).select('tenantId').lean();
+    if (currentProj?.tenantId) {
+      query.tenantId = currentProj.tenantId;
+    }
   }
 
   let projects = await Project.find(query)
@@ -399,7 +425,10 @@ export async function getDynamicPortfolioCatalogue(
     .lean();
 
   if (!projects || projects.length === 0) {
-    projects = await Project.find(excludeProjectId ? { _id: { $ne: excludeProjectId } } : {})
+    const fallbackQuery: any = {};
+    if (excludeProjectId) fallbackQuery._id = { $ne: excludeProjectId };
+    if (query.tenantId !== undefined) fallbackQuery.tenantId = query.tenantId;
+    projects = await Project.find(fallbackQuery)
       .select('name location locationUrl priceRange unitTypes developer summary')
       .lean();
   }
@@ -526,7 +555,11 @@ export function formatSingleProjectDetails(project: any, lang: DetectedLanguage)
 /**
  * Formats a numbered list of all active projects for the user to choose from
  */
-export function formatMultiProjectList(projects: any[], lang: DetectedLanguage): string {
+export function formatMultiProjectList(
+  projects: any[],
+  lang: DetectedLanguage,
+  agencyName: string = 'our Real Estate Advisory Team'
+): string {
   if (!projects || projects.length === 0) {
     if (lang === 'english') return 'No active properties are currently listed in our database.';
     return 'Filhaal database mein koi active project available nahi hai.';
@@ -537,14 +570,14 @@ export function formatMultiProjectList(projects: any[], lang: DetectedLanguage):
     .join('\n\n');
 
   if (lang === 'english') {
-    return `We currently have these prime projects available at *Bhole Baba Investments*:\n\n${items}\n\nWhich project would you like to explore details for? Please reply with the *Project Name* or *Number (1, 2...)* ðŸ¡`;
+    return `We currently have these prime projects available at *${agencyName}*:\n\n${items}\n\nWhich project would you like to explore details for? Please reply with the *Project Name* or *Number (1, 2...)* ðŸ¡`;
   }
 
   if (lang === 'hindi') {
     return `*à¤­à¥‹à¤²à¥‡ à¤¬à¤¾à¤¬à¤¾ à¤‡à¤¨à¥à¤µà¥‡à¤¸à¥à¤Ÿà¤®à¥‡à¤‚à¤Ÿà¥à¤¸* à¤•à¥‡ à¤ªà¤¾à¤¸ à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤®à¥‡à¤‚ à¤¯à¥‡ à¤ªà¥à¤°à¤®à¥à¤– à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿà¥à¤¸ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆà¤‚:\n\n${items}\n\nà¤†à¤ª à¤•à¤¿à¤¸ à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿ à¤•à¥€ à¤ªà¥‚à¤°à¥€ à¤œà¤¾à¤¨à¤•à¤¾à¤°à¥€ à¤¦à¥‡à¤–à¤¨à¤¾ à¤šà¤¾à¤¹à¤¤à¥‡ à¤¹à¥ˆà¤‚? à¤•à¥ƒà¤ªà¤¯à¤¾ à¤ªà¥à¤°à¥‹à¤œà¥‡à¤•à¥à¤Ÿ à¤•à¤¾ *à¤¨à¤¾à¤®* à¤¯à¤¾ *à¤¨à¤‚à¤¬à¤° (1, 2...)* à¤²à¤¿à¤–à¤•à¤° à¤­à¥‡à¤œà¥‡à¤‚ ðŸ¡`;
   }
 
-  return `Hamare paas *Bhole Baba Investments* ke ye prime projects available hain:\n\n${items}\n\nAap kaun se project ki details dekhna chahte hain? Bas project ka *Naam* ya *Number (1, 2...)* reply kar dein ðŸ¡`;
+  return `Hamare paas *${agencyName}* ke ye prime projects available hain:\n\n${items}\n\nAap kaun se project ki details dekhna chahte hain? Bas project ka *Naam* ya *Number (1, 2...)* reply kar dein ðŸ¡`;
 }
 
 /**
@@ -596,19 +629,20 @@ export function buildIntelligentRealEstateResponse(
   project: any,
   userMessage: string,
   lang: DetectedLanguage,
-  activeProjects: any[] = []
+  activeProjects: any[] = [],
+  agencyName: string = 'our Real Estate Advisory Team'
 ): string {
   const rawLower = (userMessage || '').toLowerCase().trim();
 
   // 0. Handoff / Callback request fallback
   if (/(call\s*me|callback|call\s*back|call\s*karo|phone\s*karo|call\s*kijiye|call\s*chahiye|call\s*chaiye|contact\s*me|agent|human|representative)/i.test(rawLower)) {
     if (lang === 'english') {
-      return `Certainly! I have forwarded your callback request to our Senior Property Advisor at *Bhole Baba Investments*.\n\n📞 Our advisor will call you shortly on your registered number.\n\nIn the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
+      return `Certainly! I have forwarded your callback request to our Senior Property Advisor at *${agencyName}*.\n\n📞 Our advisor will call you shortly on your registered number.\n\nIn the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
     }
     if (lang === 'hindi') {
       return `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *भोले बाबा इन्वेस्टमेंट्स* के सीनियर एडवाइजर को भेज दिया है।\n\n📞 हमारे एडवाइजर जल्द ही आपको कॉल करेंगे।\n\nइस दौरान यदि आपका प्रोजेक्ट, कीमत या लोकेशन से संबंधित कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
     }
-    return `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*Bhole Baba Investments*) ko forward kar diya hai.\n\n📞 Hamare advisor jald hi aapse call par connect karenge.\n\nIs dauran agar aapka pricing, location ya flat layouts ko lekar koi sawaal ho, toh aap yahan puch sakte hain! 🏡`;
+    return `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*${agencyName}*) ko forward kar diya hai.\n\n📞 Hamare advisor jald hi aapse call par connect karenge.\n\nIs dauran agar aapka pricing, location ya flat layouts ko lekar koi sawaal ho, toh aap yahan puch sakte hain! 🏡`;
   }
 
   // 1. Direct verified answer from FAQs or attributes
@@ -620,7 +654,7 @@ export function buildIntelligentRealEstateResponse(
   // 2. Asking about Projects / Available Portfolio
   const askingProjects = /projects?|options|properties|portfolio|list|what do you have|kya kya|kaun se/i.test(rawLower);
   if (askingProjects && activeProjects && activeProjects.length > 1) {
-    return formatMultiProjectList(activeProjects, lang);
+    return formatMultiProjectList(activeProjects, lang, agencyName);
   }
 
   // 3. Asking about Price / Rates
@@ -680,19 +714,19 @@ export function buildIntelligentRealEstateResponse(
     return `*${project.name}* mein world-class amenities provide ki gayi hain:\n\nâœ¨ ${aList}\n\nAap kis size ka flat ya plot prefer kar rahe hain? ðŸ¡`;
   }
 
-  // 6. Default Consultative Response Grounded in Bhole Baba Investments
+  // 6. Default Consultative Response Grounded in Agency Portfolio
   const projName = project?.name || 'our prime properties';
   const priceSnippet = project?.priceRange ? `starting @ ${project.priceRange}` : 'at the best market rates';
 
   if (lang === 'english') {
-    return `Thank you for reaching out to *Bhole Baba Investments*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a site visit this weekend? ðŸ¡`;
+    return `Thank you for reaching out to *${agencyName}*! Regarding *${projName}*, we offer excellent premium options ${priceSnippet}.\n\nWould you like more details on the exact location, available unit layouts, or shall we arrange a site visit this weekend? ðŸ¡`;
   }
 
   if (lang === 'hindi') {
     return `*à¤­à¥‹à¤²à¥‡ à¤¬à¤¾à¤¬à¤¾ à¤‡à¤¨à¥à¤µà¥‡à¤¸à¥à¤Ÿà¤®à¥‡à¤‚à¤Ÿà¥à¤¸* à¤®à¥‡à¤‚ à¤¸à¤‚à¤ªà¤°à¥à¤• à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤§à¤¨à¥à¤¯à¤µà¤¾à¤¦! *${projName}* à¤®à¥‡à¤‚ à¤¹à¤®à¤¾à¤°à¥‡ à¤ªà¤¾à¤¸ ${priceSnippet} à¤¬à¥‡à¤¹à¤¤à¤°à¥€à¤¨ à¤µà¤¿à¤•à¤²à¥à¤ª à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆà¤‚à¥¤\n\nà¤•à¥à¤¯à¤¾ à¤†à¤ª à¤²à¥‹à¤•à¥‡à¤¶à¤¨, à¤¯à¥‚à¤¨à¤¿à¤Ÿ à¤¸à¤¾à¤‡à¤œ à¤œà¤¾à¤¨à¤¨à¤¾ à¤šà¤¾à¤¹à¤¤à¥‡ à¤¹à¥ˆà¤‚ à¤¯à¤¾ à¤‡à¤¸ à¤¸à¤ªà¥à¤¤à¤¾à¤¹à¤¾à¤‚à¤¤ à¤ªà¤° à¤¸à¤¾à¤‡à¤Ÿ à¤µà¤¿à¤œà¤¿à¤Ÿ à¤ªà¥à¤²à¤¾à¤¨ à¤•à¤°à¤¨à¤¾ à¤šà¤¾à¤¹à¥‡à¤‚à¤—à¥‡? ðŸ¡`;
   }
 
-  return `*Bhole Baba Investments* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek site visit schedule karein? ðŸ¡`;
+  return `*${agencyName}* mein sampark karne ke liye shukriya! *${projName}* ke regarding hamare paas ${priceSnippet} prime options available hain.\n\nKya aap exact location, unit layouts dekhna chahenge ya is weekend par ek site visit schedule karein? ðŸ¡`;
 }
 
 

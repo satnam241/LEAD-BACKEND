@@ -10,6 +10,7 @@ const conversationState_model_1 = __importDefault(require("../models/conversatio
 const botFlow_model_1 = __importDefault(require("../models/botFlow.model"));
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const fbForm_model_1 = __importDefault(require("../models/fbForm.model"));
+const adminAuth_1 = require("../middleware/adminAuth");
 function computeInterest(attemptCount, completedAt, existingLevel) {
     const norm = (existingLevel || '').toLowerCase().trim();
     if (norm === 'hot')
@@ -29,8 +30,9 @@ async function listLeadInterest(req, res) {
     try {
         const sortBy = req.query.sortBy || 'interest';
         const now = new Date();
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const [states, activeStepsCount, manualLeads, fbForms] = await Promise.all([
-            conversationState_model_1.default.find()
+            conversationState_model_1.default.find(tenantFilter)
                 .populate({
                 path: 'leadId',
                 select: 'fullName phone email status interestLevel formName formId source projectId followUp note createdAt updatedAt',
@@ -40,12 +42,13 @@ async function listLeadInterest(req, res) {
                 .lean(),
             botFlow_model_1.default.countDocuments({ isActive: true }),
             lead_model_1.default.find({
+                ...tenantFilter,
                 interestLevel: { $in: ['hot', 'warm', 'cold'] },
                 isDeleted: { $ne: true },
             })
                 .populate('projectId', 'name slug')
                 .lean(),
-            fbForm_model_1.default.find().select('formId name').lean(),
+            fbForm_model_1.default.find(tenantFilter).select('formId name').lean(),
         ]);
         const formMap = new Map();
         for (const f of fbForms) {
@@ -169,8 +172,9 @@ async function listLeadInterest(req, res) {
 // GET /api/lead-interest/:leadId — full conversation timeline for one lead
 async function getLeadInterestById(req, res) {
     try {
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         const [state, activeStepsCount, leadDoc, fbForms] = await Promise.all([
-            conversationState_model_1.default.findOne({ leadId: req.params.leadId })
+            conversationState_model_1.default.findOne({ leadId: req.params.leadId, ...tenantFilter })
                 .sort({ updatedAt: -1 })
                 .populate({
                 path: 'leadId',
@@ -180,8 +184,8 @@ async function getLeadInterestById(req, res) {
                 .populate('activeProjectId', 'name slug')
                 .lean(),
             botFlow_model_1.default.countDocuments({ isActive: true }),
-            lead_model_1.default.findById(req.params.leadId).populate('projectId', 'name slug').lean(),
-            fbForm_model_1.default.find().select('formId name').lean(),
+            lead_model_1.default.findOne({ _id: req.params.leadId, ...tenantFilter }).populate('projectId', 'name slug').lean(),
+            fbForm_model_1.default.find(tenantFilter).select('formId name').lean(),
         ]);
         if (!state && !leadDoc) {
             res.status(404).json({ message: 'Lead not found' });
@@ -260,7 +264,8 @@ async function updateLeadInterest(req, res) {
             res.status(400).json({ message: 'Invalid interest level. Must be hot, warm, cold, or null' });
             return;
         }
-        const updatedLead = await lead_model_1.default.findByIdAndUpdate(leadId, { interestLevel: level }, { new: true });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const updatedLead = await lead_model_1.default.findOneAndUpdate({ _id: leadId, ...tenantFilter }, { interestLevel: level }, { new: true });
         if (!updatedLead) {
             res.status(404).json({ message: 'Lead not found' });
             return;

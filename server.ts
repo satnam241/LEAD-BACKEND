@@ -17,7 +17,7 @@ import followup from "./routes/followup.routes";
 import googleRoutes from "./routes/google.routes";
 import { startFollowupNotifier } from "./services/followupNotifier";
 import assigneeRoutes from "./routes/assigneeRoutes";
-import { startWhatsApp } from './services/baileysService';
+import { startWhatsApp, startAllConnectedTenantSessions } from './services/baileysService';
 import { registerChatbot } from './services/chatbotService';
 import campaignRoutes from './routes/campaign.routes';
 import templateRoutes from './routes/template.routes';
@@ -28,9 +28,18 @@ import botFlowRoutes from './routes/botFlow.routes';
 import projectRoutes from './routes/project.routes';
 import fbFormRoutes from './routes/fbForm.routes';
 import aiChatRoutes from './routes/aiChat.routes';
+import planRoutes from './routes/plan.routes';
+import saasAuthRoutes from './routes/saasAuth.routes';
+import tenantSettingsRoutes from './routes/tenantSettings.routes';
+import superAdminRoutes from './routes/superAdmin.routes';
 import { getNotifications } from "./controllers/admin.controller";
 import { adminAuth } from "./middleware/adminAuth";
 import { startAutomatedTrainingScheduler } from './services/automatedLlmTrainingService';
+import {
+  noSqlSanitizer,
+  auditSecurityConfig,
+  getCorsOriginDelegate,
+} from "./middleware/security.middleware";
 
 import path from "path";
 import fs from "fs";
@@ -54,8 +63,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ Enable CORS before static assets & API routes
-app.use(cors({ origin: true, credentials: true }));
+// ✅ Enable CORS before static assets & API routes (Strict Whitelist in Prod)
+app.use(cors({ origin: getCorsOriginDelegate(), credentials: true }));
 
 const staticOptions = {
   dotfiles: "deny" as const,
@@ -77,6 +86,9 @@ app.use("/api/public", express.static(path.join(process.cwd(), "public"), static
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// 🛡️ Global NoSQL Injection Sanitizer
+app.use(noSqlSanitizer);
+
 app.get("/", (_req, res) => {
   res.send("🚀 Facebook Webhook API Live!");
 });
@@ -97,7 +109,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/debug", debugRoute);
 app.use("/api/activity", activityRoutes);
 app.use("/api/followup", followup);
-app.use("/api/google",googleRoutes);
+app.use("/api/google", googleRoutes);
 app.use("/api/assignees", assigneeRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/templates', templateRoutes);
@@ -107,22 +119,31 @@ app.use('/api/bot-flow', botFlowRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/fb-forms', fbFormRoutes);
 app.use('/api/ai-chat', aiChatRoutes);
+
+// 🏢 SaaS Multi-Tenancy Routes
+app.use('/api/plans', planRoutes);
+app.use('/api/saas', saasAuthRoutes);
+app.use('/api/tenant', tenantSettingsRoutes);
+app.use('/api/super-admin', superAdminRoutes);
+
 app.get('/api/notifications', adminAuth, getNotifications);
 
 // ✅ PROPER SERVER START
 const startServer = async () => {
+  auditSecurityConfig();
   await connectDB(); // DB ready hone do
-console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
-console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
-console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REFRESH_TOKEN);
+  console.log("EMAIL_GOOGLE_USER:", process.env.EMAIL_GOOGLE_USER);
+  console.log("EMAIL_GOOGLE_CLIENT_ID exists:", !!process.env.EMAIL_GOOGLE_CLIENT_ID);
+  console.log("EMAIL_GOOGLE_REFRESH_TOKEN exists:", !!process.env.EMAIL_GOOGLE_REFRESH_TOKEN);
   const activeLLM = getActiveLLMClient();
   console.log(`🤖 AI Engine: Active Provider = ${activeLLM.provider.toUpperCase()} (${activeLLM.model})`);
 
   registerChatbot();
   startWhatsApp();
+  startAllConnectedTenantSessions().catch(err => console.error('[Baileys] Error starting tenant sessions:', err));
 
-startFollowupNotifier();
-startAutomatedTrainingScheduler();
+  startFollowupNotifier();
+  startAutomatedTrainingScheduler();
   const PORT = process.env.PORT || 4520;
 
   app.listen(PORT, () => {

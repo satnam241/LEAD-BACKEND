@@ -38,15 +38,51 @@ const AdminSchema = new mongoose_1.Schema({
     name: {
         type: String,
         required: true,
+        trim: true,
     },
     email: {
         type: String,
         required: true,
-        unique: false,
+        lowercase: true,
+        trim: true,
+        index: true,
     },
     password: {
         type: String,
         required: true,
+    },
+    phone: {
+        type: String,
+        trim: true,
+        default: null,
+        index: true,
+    },
+    role: {
+        type: String,
+        enum: ["super_admin", "tenant_admin", "team_member"],
+        default: "tenant_admin",
+        index: true,
+    },
+    tenantId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: "Tenant",
+        default: null,
+        index: true,
+    },
+    companyName: {
+        type: String,
+        trim: true,
+        default: null,
+    },
+    status: {
+        type: String,
+        enum: ["active", "pending_payment", "suspended"],
+        default: "active",
+        index: true,
+    },
+    refreshToken: {
+        type: String,
+        default: null,
     },
     // ✅ Google Calendar
     googleCalendar: {
@@ -78,5 +114,6 @@ const AdminSchema = new mongoose_1.Schema({
 }, {
     timestamps: true,
 });
+AdminSchema.index({ tenantId: 1, role: 1 });
 exports.default = mongoose_1.default.model("Admin", AdminSchema);
 //# sourceMappingURL=admin.model.js.map

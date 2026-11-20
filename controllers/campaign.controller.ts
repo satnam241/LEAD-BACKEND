@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Model, FilterQuery } from 'mongoose';
+import mongoose, { Model, FilterQuery } from 'mongoose';
 import Campaign from '../models/campaign.model';
 import Template from '../models/template.model';
 // ⚠️ Adjust this import to match your actual Lead model file/export.
@@ -7,6 +7,7 @@ import LeadModel from '../models/lead.model';
 import { audienceMap } from '../config/audienceMap';
 import { sendText, sendMedia, getConnectionStatus } from '../services/baileysService';
 import type { CampaignFilters, LeadLike } from '../types/whatsapp.types';
+import { getTenantFilter } from '../middleware/adminAuth';
 
 const Lead = LeadModel as unknown as Model<LeadLike>;
 
@@ -24,16 +25,18 @@ export async function listCampaigns(req: Request, res: Response): Promise<void> 
       query.$or = [{ name: rx }, { audience: rx }, { template: rx }];
     }
 
-    const campaigns = await Campaign.find(query).sort({ createdAt: -1 }).lean();
+    const tenantFilter = getTenantFilter(req as any);
+    const campaigns = await Campaign.find({ ...query, ...tenantFilter }).sort({ createdAt: -1 }).lean();
     res.json(campaigns);
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch campaigns', error: (err as Error).message });
   }
 }
 
-export async function getStats(_req: Request, res: Response): Promise<void> {
+export async function getStats(req: Request, res: Response): Promise<void> {
   try {
-    const campaigns = await Campaign.find().lean();
+    const tenantFilter = getTenantFilter(req as any);
+    const campaigns = await Campaign.find(tenantFilter).lean();
     res.json({
       total: campaigns.length,
       active: campaigns.filter(c => c.status === 'Running').length,
@@ -48,23 +51,24 @@ export async function getStats(_req: Request, res: Response): Promise<void> {
 export async function getAudienceCounts(_req: Request, res: Response): Promise<void> {
   try {
     const now = new Date();
+    const tenantFilter = getTenantFilter(_req as any);
     const entries = await Promise.all(
       Object.entries(audienceMap).map(async ([label, statusValue]) => {
         let count: number;
         if (label === 'Follow-up Leads') {
-          count = await Lead.countDocuments({ 'followUp.active': true, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ ...tenantFilter, 'followUp.active': true, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         } else if (label === 'Due Follow-up Leads') {
-          count = await Lead.countDocuments({ 'followUp.active': true, 'followUp.date': { $lte: now }, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ ...tenantFilter, 'followUp.active': true, 'followUp.date': { $lte: now }, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         } else if (label === 'Hot Leads') {
-          count = await Lead.countDocuments({ interestLevel: 'hot', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ ...tenantFilter, interestLevel: 'hot', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         } else if (label === 'Warm Leads') {
-          count = await Lead.countDocuments({ interestLevel: 'warm', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ ...tenantFilter, interestLevel: 'warm', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         } else if (label === 'Cold Leads') {
-          count = await Lead.countDocuments({ interestLevel: 'cold', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ ...tenantFilter, interestLevel: 'cold', isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         } else if (statusValue === null) {
-          count = await Lead.countDocuments({ isDeleted: { $ne: true } });
+          count = await Lead.countDocuments({ ...tenantFilter, isDeleted: { $ne: true } });
         } else {
-          count = await Lead.countDocuments({ status: statusValue, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
+          count = await Lead.countDocuments({ ...tenantFilter, status: statusValue, isDeleted: { $ne: true } } as FilterQuery<LeadLike>);
         }
         return [label, count] as const;
       })
@@ -75,9 +79,10 @@ export async function getAudienceCounts(_req: Request, res: Response): Promise<v
   }
 }
 
-export async function getTemplates(_req: Request, res: Response): Promise<void> {
+export async function getTemplates(req: Request, res: Response): Promise<void> {
   try {
-    const templates = await Template.find().sort({ createdAt: -1 }).lean();
+    const tenantFilter = getTenantFilter(req as any);
+    const templates = await Template.find(tenantFilter).sort({ createdAt: -1 }).lean();
     res.json(templates);
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch templates', error: (err as Error).message });
@@ -86,7 +91,8 @@ export async function getTemplates(_req: Request, res: Response): Promise<void> 
 
 export async function getCampaignById(req: Request, res: Response): Promise<void> {
   try {
-    const campaign = await Campaign.findById(req.params.id).lean();
+    const tenantFilter = getTenantFilter(req as any);
+    const campaign = await Campaign.findOne({ _id: req.params.id, ...tenantFilter }).lean();
     if (!campaign) {
       res.status(404).json({ message: 'Campaign not found' });
       return;
@@ -97,8 +103,8 @@ export async function getCampaignById(req: Request, res: Response): Promise<void
   }
 }
 
-async function resolveEligibleLeads(audience: string, filters: CampaignFilters): Promise<LeadLike[]> {
-  const query: FilterQuery<LeadLike> = { isDeleted: { $ne: true } };
+async function resolveEligibleLeads(audience: string, filters: CampaignFilters, tenantFilter: any = {}): Promise<LeadLike[]> {
+  const query: FilterQuery<LeadLike> = { isDeleted: { $ne: true }, ...tenantFilter };
   const now = new Date();
 
   if (audience === 'Follow-up Leads') {
@@ -192,15 +198,19 @@ export async function createCampaign(
       return;
     }
 
-    const templateData = await Template.findOne({ name: template });
+    const tenantFilter = getTenantFilter(req as any);
+    const tenantId = (req as any).tenantId;
+
+    const templateData = await Template.findOne({ name: template, ...tenantFilter });
     if (!templateData) {
       res.status(400).json({ message: `Template "${template}" not found` });
       return;
     }
 
-    const eligibleLeads = await resolveEligibleLeads(audience, filters);
+    const eligibleLeads = await resolveEligibleLeads(audience, filters, tenantFilter);
 
     const campaign = await Campaign.create({
+      tenantId: tenantId ? (mongoose.Types.ObjectId.isValid(tenantId) ? new mongoose.Types.ObjectId(tenantId) : tenantId) : null,
       name: name.trim(),
       audience,
       template,
@@ -213,7 +223,7 @@ export async function createCampaign(
       return;
     }
 
-    const { status } = getConnectionStatus();
+    const { status } = getConnectionStatus(tenantId);
     if (status !== 'open') {
       campaign.status = 'Failed';
       await campaign.save();
@@ -226,9 +236,9 @@ export async function createCampaign(
       const message = buildFullMessage(templateData as any, lead);
       let outcome;
       if (templateData.imageUrl?.trim()) {
-        outcome = await sendMedia(lead.phone, templateData.imageUrl.trim(), message);
+        outcome = await sendMedia(lead.phone, templateData.imageUrl.trim(), message, tenantId);
       } else {
-        outcome = await sendText(lead.phone, message);
+        outcome = await sendText(lead.phone, message, tenantId);
       }
       const recipientRecord = {
         leadId: lead._id,

@@ -14,6 +14,7 @@ const recipientStatusSchema = new mongoose_1.Schema({
     error: String,
 }, { _id: false });
 const campaignSchema = new mongoose_1.Schema({
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     name: { type: String, required: true, trim: true },
     audience: { type: String, required: true },
     template: { type: String, required: true },

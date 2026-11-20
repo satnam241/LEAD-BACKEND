@@ -40,10 +40,13 @@ exports.onIncomingMessage = onIncomingMessage;
 exports.onMessageRead = onMessageRead;
 exports.onMessageStatus = onMessageStatus;
 exports.isSpamFlood = isSpamFlood;
+exports.resolveTenantId = resolveTenantId;
+exports.getAuthFolderForTenant = getAuthFolderForTenant;
 exports.extractMessageText = extractMessageText;
 exports.normalizePhone = normalizePhone;
 exports.toJid = toJid;
 exports.startWhatsApp = startWhatsApp;
+exports.startAllConnectedTenantSessions = startAllConnectedTenantSessions;
 exports.getConnectionStatus = getConnectionStatus;
 exports.sendText = sendText;
 exports.sendTyping = sendTyping;
@@ -57,12 +60,8 @@ const qrcode_1 = __importDefault(require("qrcode"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const axios_1 = __importDefault(require("axios"));
-const AUTH_FOLDER = process.env.BAILEYS_AUTH_FOLDER || path_1.default.join(process.cwd(), 'auth_info_baileys');
-let sock = null;
-let latestQrDataUrl = null;
-let connectionStatus = 'connecting';
-let isConnecting = false;
-let reconnectTimer = null;
+// In-Memory Multi-Tenant Session Registry
+const sessions = new Map();
 let incomingMessageHandler = null;
 let messageReadHandler = null;
 let messageStatusHandler = null;
@@ -88,6 +87,25 @@ function isSpamFlood(jid) {
     }
     record.count++;
     return record.count > 6; // drop flood if >6 messages within 10 seconds
+}
+function resolveTenantId(tenantIdInput) {
+    if (!tenantIdInput || tenantIdInput.trim() === '' || tenantIdInput === 'null' || tenantIdInput === 'undefined' || tenantIdInput === 'master' || tenantIdInput === '6aeadd659d2ebdcd245948e2') {
+        return 'master';
+    }
+    return tenantIdInput.trim();
+}
+function getAuthFolderForTenant(tenantId) {
+    if (tenantId === 'master' || tenantId === '6aeadd659d2ebdcd245948e2') {
+        return process.env.BAILEYS_AUTH_FOLDER || path_1.default.join(process.cwd(), 'auth_info_baileys');
+    }
+    const baseDir = path_1.default.join(process.cwd(), 'baileys_auth');
+    if (!fs_1.default.existsSync(baseDir)) {
+        try {
+            fs_1.default.mkdirSync(baseDir, { recursive: true });
+        }
+        catch { }
+    }
+    return path_1.default.join(baseDir, `tenant_${tenantId}`);
 }
 // Unpack ephemeral, viewOnce, button replies, list replies, or regular text safely
 function extractMessageText(message) {
@@ -180,92 +198,140 @@ function toJid(phone) {
         return '';
     return `${digits}@s.whatsapp.net`;
 }
-async function startWhatsApp() {
-    if (isConnecting) {
-        console.log('[Baileys] Connection attempt already in progress, skipping duplicate call.');
+// Helper to get real phone JID even if WhatsApp uses Privacy LID (@lid)
+function extractPhoneJid(key) {
+    if (!key)
+        return '';
+    const rJid = key.remoteJid || '';
+    const altJid = key.remoteJidAlt || '';
+    const partAlt = key.participantAlt || '';
+    const part = key.participant || '';
+    for (const jid of [rJid, altJid, partAlt, part]) {
+        if (typeof jid === 'string' && jid.endsWith('@s.whatsapp.net')) {
+            return jid;
+        }
+    }
+    return altJid || rJid || '';
+}
+/**
+ * Initializes and starts WhatsApp socket specifically for a given tenant.
+ * Defaults to 'master' (legacy/master tenant).
+ */
+async function startWhatsApp(tenantIdInput) {
+    const tenantId = resolveTenantId(tenantIdInput);
+    let session = sessions.get(tenantId);
+    if (!session) {
+        session = {
+            tenantId,
+            authFolder: getAuthFolderForTenant(tenantId),
+            sock: null,
+            latestQrDataUrl: null,
+            connectionStatus: 'connecting',
+            isConnecting: false,
+            reconnectTimer: null,
+        };
+        sessions.set(tenantId, session);
+    }
+    if (session.isConnecting) {
+        console.log(`[Baileys][${tenantId}] Connection attempt already in progress, skipping duplicate call.`);
         return;
     }
-    isConnecting = true;
+    session.isConnecting = true;
     try {
-        const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(AUTH_FOLDER);
-        if (sock) {
+        const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(session.authFolder);
+        if (session.sock) {
             try {
-                sock.ev.removeAllListeners('connection.update');
-                sock.ev.removeAllListeners('creds.update');
-                sock.ev.removeAllListeners('messages.upsert');
-                sock.ev.removeAllListeners('messages.update');
-                sock.ev.removeAllListeners('message-receipt.update');
+                session.sock.ev.removeAllListeners('connection.update');
+                session.sock.ev.removeAllListeners('creds.update');
+                session.sock.ev.removeAllListeners('messages.upsert');
+                session.sock.ev.removeAllListeners('messages.update');
+                session.sock.ev.removeAllListeners('message-receipt.update');
             }
             catch { }
         }
-        sock = (0, baileys_1.default)({
+        const sock = (0, baileys_1.default)({
             auth: state,
             logger: (0, pino_1.default)({ level: 'silent' }),
-            printQRInTerminal: true,
+            printQRInTerminal: tenantId === 'master',
             defaultQueryTimeoutMs: 60000,
         });
+        session.sock = sock;
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
             if (qr) {
-                latestQrDataUrl = await qrcode_1.default.toDataURL(qr);
-                connectionStatus = 'connecting';
-                console.log('[Baileys] 📱 New QR code generated. Please scan with WhatsApp.');
+                session.latestQrDataUrl = await qrcode_1.default.toDataURL(qr);
+                session.connectionStatus = 'connecting';
+                console.log(`[Baileys][${tenantId}] 📱 New QR code generated. Please scan with WhatsApp.`);
             }
             if (connection === 'open') {
-                connectionStatus = 'open';
-                latestQrDataUrl = null;
-                isConnecting = false;
-                console.log('[Baileys] ✅ WhatsApp connected and ready!');
+                session.connectionStatus = 'open';
+                session.latestQrDataUrl = null;
+                session.isConnecting = false;
+                const rawPhone = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0] : undefined;
+                if (rawPhone) {
+                    session.phoneNumber = rawPhone;
+                }
+                console.log(`[Baileys][${tenantId}] ✅ WhatsApp connected and ready! Phone: ${rawPhone || 'N/A'}`);
+                if (tenantId !== 'master') {
+                    try {
+                        const Tenant = (await Promise.resolve().then(() => __importStar(require('../models/tenant.model')))).default;
+                        await Tenant.findByIdAndUpdate(tenantId, {
+                            $set: {
+                                'whatsappConfig.status': 'connected',
+                                'whatsappConfig.phoneNumber': rawPhone || '',
+                                'whatsappConfig.connectedAt': new Date(),
+                                'whatsappConfig.authFolder': session.authFolder,
+                            },
+                        });
+                    }
+                    catch (dbErr) {
+                        console.warn(`[Baileys][${tenantId}] Warning updating tenant DB status:`, dbErr);
+                    }
+                }
             }
             if (connection === 'close') {
-                connectionStatus = 'close';
-                isConnecting = false;
+                session.connectionStatus = 'close';
+                session.isConnecting = false;
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const loggedOut = statusCode === baileys_1.DisconnectReason.loggedOut;
-                console.log(`[Baileys] ⚠️ Connection closed. Status code: ${statusCode}, Logged out: ${loggedOut}`);
+                console.log(`[Baileys][${tenantId}] ⚠️ Connection closed. Status code: ${statusCode}, Logged out: ${loggedOut}`);
                 if (!loggedOut) {
-                    if (reconnectTimer)
-                        clearTimeout(reconnectTimer);
-                    reconnectTimer = setTimeout(() => {
-                        startWhatsApp().catch(err => console.error('[Baileys] Reconnect error:', err));
+                    if (session.reconnectTimer)
+                        clearTimeout(session.reconnectTimer);
+                    session.reconnectTimer = setTimeout(() => {
+                        startWhatsApp(tenantId).catch(err => console.error(`[Baileys][${tenantId}] Reconnect error:`, err));
                     }, 3000);
                 }
                 else {
-                    console.log('[Baileys] ❌ Session logged out — clearing expired session to generate a fresh QR code...');
-                    latestQrDataUrl = null;
+                    console.log(`[Baileys][${tenantId}] ❌ Session logged out — clearing expired session to generate a fresh QR code...`);
+                    session.latestQrDataUrl = null;
                     try {
-                        if (fs_1.default.existsSync(AUTH_FOLDER)) {
-                            fs_1.default.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+                        if (fs_1.default.existsSync(session.authFolder)) {
+                            fs_1.default.rmSync(session.authFolder, { recursive: true, force: true });
                         }
                     }
                     catch (err) {
-                        console.error('[Baileys] Failed to clear auth folder:', err);
+                        console.error(`[Baileys][${tenantId}] Failed to clear auth folder:`, err);
                     }
-                    if (reconnectTimer)
-                        clearTimeout(reconnectTimer);
-                    reconnectTimer = setTimeout(() => {
-                        startWhatsApp().catch(err => console.error('[Baileys] Restart error after logout:', err));
+                    if (tenantId !== 'master') {
+                        try {
+                            const Tenant = (await Promise.resolve().then(() => __importStar(require('../models/tenant.model')))).default;
+                            await Tenant.findByIdAndUpdate(tenantId, {
+                                $set: { 'whatsappConfig.status': 'disconnected' },
+                            });
+                        }
+                        catch { }
+                    }
+                    if (session.reconnectTimer)
+                        clearTimeout(session.reconnectTimer);
+                    session.reconnectTimer = setTimeout(() => {
+                        startWhatsApp(tenantId).catch(err => console.error(`[Baileys][${tenantId}] Restart error after logout:`, err));
                     }, 1500);
                 }
             }
         });
         sock.ev.on('creds.update', saveCreds);
-        // Helper to get real phone JID even if WhatsApp uses Privacy LID (@lid)
-        const extractPhoneJid = (key) => {
-            if (!key)
-                return '';
-            const rJid = key.remoteJid || '';
-            const altJid = key.remoteJidAlt || '';
-            const partAlt = key.participantAlt || '';
-            const part = key.participant || '';
-            for (const jid of [rJid, altJid, partAlt, part]) {
-                if (typeof jid === 'string' && jid.endsWith('@s.whatsapp.net')) {
-                    return jid;
-                }
-            }
-            return altJid || rJid || '';
-        };
-        // Incoming messages with Anti-Attack & Anti-Spam Shield
+        // Incoming messages
         sock.ev.on('messages.upsert', ({ messages }) => {
             for (const msg of messages) {
                 try {
@@ -283,15 +349,15 @@ async function startWhatsApp() {
                         continue;
                     // Security: Block message flooding (DoS attack prevention)
                     if (isSpamFlood(phoneJid)) {
-                        console.warn(`[Baileys Security] 🛡️ Flood/Spam message dropped from ${phoneJid}`);
+                        console.warn(`[Baileys Security][${tenantId}] 🛡️ Flood/Spam message dropped from ${phoneJid}`);
                         continue;
                     }
                     const text = extractMessageText(msg.message);
-                    console.log(`[Baileys] 📩 Incoming WhatsApp from ${phoneJid} (Raw: ${remoteJid}): "${text ?? '[media/action]'}"`);
-                    incomingMessageHandler?.(phoneJid, text, msg);
+                    console.log(`[Baileys][${tenantId}] 📩 Incoming WhatsApp from ${phoneJid} (Raw: ${remoteJid}): "${text ?? '[media/action]'}"`);
+                    incomingMessageHandler?.(phoneJid, text, msg, tenantId);
                 }
                 catch (err) {
-                    console.error('[Baileys Security] Error processing incoming message:', err);
+                    console.error(`[Baileys Security][${tenantId}] Error processing incoming message:`, err);
                 }
             }
         });
@@ -309,13 +375,13 @@ async function startWhatsApp() {
                 const isDelivered = statusVal === 3 ||
                     statusVal === 'DELIVERY_ACK';
                 if (isRead) {
-                    console.log(`[Baileys] 👁️ Message READ by ${phoneJid} (ID: ${u.key.id})`);
-                    messageReadHandler?.(phoneJid, u.key.id);
-                    messageStatusHandler?.(phoneJid, u.key.id, 'read');
+                    console.log(`[Baileys][${tenantId}] 👁️ Message READ by ${phoneJid} (ID: ${u.key.id})`);
+                    messageReadHandler?.(phoneJid, u.key.id, tenantId);
+                    messageStatusHandler?.(phoneJid, u.key.id, 'read', tenantId);
                 }
                 else if (isDelivered) {
-                    console.log(`[Baileys] 📬 Message DELIVERED to ${phoneJid} (ID: ${u.key.id})`);
-                    messageStatusHandler?.(phoneJid, u.key.id, 'delivered');
+                    console.log(`[Baileys][${tenantId}] 📬 Message DELIVERED to ${phoneJid} (ID: ${u.key.id})`);
+                    messageStatusHandler?.(phoneJid, u.key.id, 'delivered', tenantId);
                 }
             }
         });
@@ -326,27 +392,100 @@ async function startWhatsApp() {
                     continue;
                 const phoneJid = r.receipt?.userJid || extractPhoneJid(r.key);
                 if (r.receipt?.readTimestamp) {
-                    console.log(`[Baileys] 👁️ [Receipt] Message READ by ${phoneJid} (ID: ${r.key.id})`);
-                    messageReadHandler?.(phoneJid, r.key.id);
-                    messageStatusHandler?.(phoneJid, r.key.id, 'read');
+                    console.log(`[Baileys][${tenantId}] 👁️ [Receipt] Message READ by ${phoneJid} (ID: ${r.key.id})`);
+                    messageReadHandler?.(phoneJid, r.key.id, tenantId);
+                    messageStatusHandler?.(phoneJid, r.key.id, 'read', tenantId);
                 }
                 else if (r.receipt?.receiptTimestamp) {
-                    console.log(`[Baileys] 📬 [Receipt] Message DELIVERED to ${phoneJid} (ID: ${r.key.id})`);
-                    messageStatusHandler?.(phoneJid, r.key.id, 'delivered');
+                    console.log(`[Baileys][${tenantId}] 📬 [Receipt] Message DELIVERED to ${phoneJid} (ID: ${r.key.id})`);
+                    messageStatusHandler?.(phoneJid, r.key.id, 'delivered', tenantId);
                 }
             }
         });
     }
     catch (err) {
-        isConnecting = false;
-        connectionStatus = 'close';
-        console.error('[Baileys] Failed to initialize WhatsApp socket:', err);
+        if (session) {
+            session.isConnecting = false;
+            session.connectionStatus = 'close';
+        }
+        console.error(`[Baileys][${tenantId}] Failed to initialize WhatsApp socket:`, err);
     }
 }
-function getConnectionStatus() {
-    return { status: connectionStatus, qr: latestQrDataUrl };
+/**
+ * On server startup, automatically connects all active tenants with existing auth folders
+ */
+async function startAllConnectedTenantSessions() {
+    try {
+        const baseDir = path_1.default.join(process.cwd(), 'baileys_auth');
+        if (fs_1.default.existsSync(baseDir)) {
+            const entries = fs_1.default.readdirSync(baseDir);
+            for (const entry of entries) {
+                if (entry.startsWith('tenant_')) {
+                    const tid = entry.replace('tenant_', '');
+                    console.log(`[Baileys] 🔄 Found existing auth session for tenant ${tid}. Auto-starting...`);
+                    startWhatsApp(tid).catch(err => console.error(`[Baileys] Error starting session for tenant ${tid}:`, err));
+                }
+            }
+        }
+        const Tenant = (await Promise.resolve().then(() => __importStar(require('../models/tenant.model')))).default;
+        const connectedTenants = await Tenant.find({
+            'whatsappConfig.status': 'connected',
+            isMaster: false,
+        }).select('_id').lean();
+        for (const t of connectedTenants) {
+            const tid = t._id.toString();
+            if (!sessions.has(tid)) {
+                console.log(`[Baileys] 🔄 Starting DB connected tenant WhatsApp: ${tid}`);
+                startWhatsApp(tid).catch(err => console.error(`[Baileys] Error starting tenant ${tid}:`, err));
+            }
+        }
+    }
+    catch (err) {
+        console.error('[Baileys] Error auto-starting tenant sessions:', err);
+    }
 }
-async function sendText(phone, text) {
+/**
+ * Retrieves connection status and QR for a specific tenant.
+ * Auto-initializes session on-demand if not already started.
+ */
+function getConnectionStatus(tenantIdInput) {
+    const tid = resolveTenantId(tenantIdInput);
+    let session = sessions.get(tid);
+    if (!session) {
+        startWhatsApp(tid).catch(err => console.error(`[Baileys] Error starting on-demand session for ${tid}:`, err));
+        session = sessions.get(tid);
+    }
+    return {
+        status: session?.connectionStatus || 'connecting',
+        qr: session?.latestQrDataUrl || null,
+        phoneNumber: session?.phoneNumber,
+    };
+}
+/**
+ * Resolves the active socket for a given tenant, falling back to master socket if needed.
+ */
+function getSocketForTenant(tenantIdInput) {
+    const tid = resolveTenantId(tenantIdInput);
+    let session = sessions.get(tid);
+    if (session && session.connectionStatus === 'open' && session.sock) {
+        return { sock: session.sock, connectionStatus: 'open', resolvedTenantId: tid };
+    }
+    // Graceful fallback to master tenant if this specific tenant is not connected yet
+    if (tid !== 'master') {
+        const masterSession = sessions.get('master');
+        if (masterSession && masterSession.connectionStatus === 'open' && masterSession.sock) {
+            console.log(`[Baileys] ℹ️ Tenant ${tid} socket not open. Falling back to master socket.`);
+            return { sock: masterSession.sock, connectionStatus: 'open', resolvedTenantId: 'master' };
+        }
+    }
+    return {
+        sock: session?.sock || null,
+        connectionStatus: session?.connectionStatus || 'close',
+        resolvedTenantId: tid,
+    };
+}
+async function sendText(phone, text, tenantId) {
+    const { sock, connectionStatus } = getSocketForTenant(tenantId);
     if (!sock || connectionStatus !== 'open') {
         return {
             success: false,
@@ -361,19 +500,20 @@ async function sendText(phone, text) {
         return { success: false, error: 'Message text cannot be empty' };
     }
     try {
-        console.log(`[Baileys] 📤 Sending text message to ${jid}...`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] 📤 Sending text message to ${jid}...`);
         const result = await sock.sendMessage(jid, { text: text.trim() });
         const waMessageId = result?.key?.id ?? undefined;
-        console.log(`[Baileys] ✅ Message sent to ${jid} (ID: ${waMessageId})`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] ✅ Message sent to ${jid} (ID: ${waMessageId})`);
         return { success: true, waMessageId };
     }
     catch (err) {
         const errMsg = err.message;
-        console.error(`[Baileys] ❌ Failed to send message to ${jid}:`, errMsg);
+        console.error(`[Baileys][${resolveTenantId(tenantId)}] ❌ Failed to send message to ${jid}:`, errMsg);
         return { success: false, error: errMsg };
     }
 }
-async function sendTyping(phone, state = 'composing') {
+async function sendTyping(phone, state = 'composing', tenantId) {
+    const { sock, connectionStatus } = getSocketForTenant(tenantId);
     if (!sock || connectionStatus !== 'open')
         return;
     const jid = toJid(phone);
@@ -383,10 +523,11 @@ async function sendTyping(phone, state = 'composing') {
         await sock.sendPresenceUpdate(state, jid);
     }
     catch (err) {
-        console.warn(`[Baileys] ⚠️ Failed to update presence (${state}) for ${jid}:`, err?.message || err);
+        console.warn(`[Baileys][${resolveTenantId(tenantId)}] ⚠️ Failed to update presence (${state}) for ${jid}:`, err?.message || err);
     }
 }
-async function sendInteractiveButtons(phone, bodyText, options, headerText, footerText) {
+async function sendInteractiveButtons(phone, bodyText, options, headerText, footerText, tenantId) {
+    const { sock, connectionStatus } = getSocketForTenant(tenantId);
     if (!sock || connectionStatus !== 'open') {
         return {
             success: false,
@@ -397,7 +538,6 @@ async function sendInteractiveButtons(phone, bodyText, options, headerText, foot
     if (!jid) {
         return { success: false, error: 'Invalid recipient phone number' };
     }
-    // Fallback text generator: Clean button-style card representation
     const formatButtonText = () => {
         const lines = [];
         if (headerText?.trim()) {
@@ -414,7 +554,7 @@ async function sendInteractiveButtons(phone, bodyText, options, headerText, foot
         return lines.join('\n');
     };
     try {
-        console.log(`[Baileys] 🔘 Attempting to send native interactive buttons to ${jid}...`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] 🔘 Attempting to send native interactive buttons to ${jid}...`);
         const buttons = options.map((opt, index) => ({
             name: 'quick_reply',
             buttonParamsJson: JSON.stringify({
@@ -461,13 +601,13 @@ async function sendInteractiveButtons(phone, bodyText, options, headerText, foot
             messageId: msg.key.id,
             additionalNodes,
         });
-        console.log(`[Baileys] ✅ Native interactive buttons sent successfully to ${jid} (ID: ${msg.key.id})`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] ✅ Native interactive buttons sent successfully to ${jid} (ID: ${msg.key.id})`);
         return { success: true, waMessageId: msg.key.id ?? undefined };
     }
     catch (nativeErr) {
-        console.warn(`[Baileys] ⚠️ Native interactive buttons relay error: ${nativeErr.message}. Falling back to styled button card text...`);
+        console.warn(`[Baileys][${resolveTenantId(tenantId)}] ⚠️ Native interactive buttons relay error: ${nativeErr.message}. Falling back to styled button card text...`);
         const fallbackText = formatButtonText();
-        return sendText(phone, fallbackText);
+        return sendText(phone, fallbackText, tenantId);
     }
 }
 /**
@@ -477,7 +617,6 @@ async function sendInteractiveButtons(phone, bodyText, options, headerText, foot
 async function resolveMediaPayload(mediaUrl) {
     try {
         const cleanUrl = mediaUrl.trim();
-        // 1. If mediaUrl contains uploads directory path
         let filename = '';
         if (cleanUrl.includes('/public/uploads/')) {
             const parts = cleanUrl.split('/public/uploads/');
@@ -506,13 +645,10 @@ async function resolveMediaPayload(mediaUrl) {
                 }
             }
         }
-        // 2. Direct absolute or relative path check
         if (fs_1.default.existsSync(cleanUrl)) {
             console.log(`[Baileys] 📂 Loading image from direct file path: ${cleanUrl}`);
             return fs_1.default.readFileSync(cleanUrl);
         }
-        // 3. For HTTP/HTTPS URLs, download buffer directly with axios
-        // This avoids Baileys internal stream fetch failures on localhost or external hosts
         if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
             try {
                 console.log(`[Baileys] 🌐 Pre-fetching media buffer via HTTP: ${cleanUrl}`);
@@ -530,7 +666,6 @@ async function resolveMediaPayload(mediaUrl) {
                 console.warn(`[Baileys] ⚠️ Axios pre-fetch failed (${httpErr.message}). Falling back to URL payload.`);
             }
         }
-        // 4. Fallback: pass raw url object to Baileys
         return { url: cleanUrl };
     }
     catch (err) {
@@ -538,7 +673,8 @@ async function resolveMediaPayload(mediaUrl) {
         return { url: mediaUrl };
     }
 }
-async function sendMedia(phone, mediaUrl, caption) {
+async function sendMedia(phone, mediaUrl, caption, tenantId) {
+    const { sock, connectionStatus } = getSocketForTenant(tenantId);
     if (!sock || connectionStatus !== 'open') {
         return {
             success: false,
@@ -550,7 +686,7 @@ async function sendMedia(phone, mediaUrl, caption) {
         return { success: false, error: 'Invalid recipient phone number' };
     }
     try {
-        console.log(`[Baileys] 📤 Sending media message to ${jid}: ${mediaUrl}...`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] 📤 Sending media message to ${jid}: ${mediaUrl}...`);
         const payload = await resolveMediaPayload(mediaUrl);
         const cleanUrl = mediaUrl.toLowerCase().split('?')[0];
         const isVideo = cleanUrl.endsWith('.mp4') || cleanUrl.endsWith('.mov') || cleanUrl.endsWith('.webm') || cleanUrl.endsWith('.mkv');
@@ -578,16 +714,17 @@ async function sendMedia(phone, mediaUrl, caption) {
         }
         const result = await sock.sendMessage(jid, messagePayload);
         const waMessageId = result?.key?.id ?? undefined;
-        console.log(`[Baileys] ✅ Media (${isVideo ? 'Video' : isPdf ? 'PDF' : 'Image'}) sent to ${jid} (ID: ${waMessageId})`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] ✅ Media (${isVideo ? 'Video' : isPdf ? 'PDF' : 'Image'}) sent to ${jid} (ID: ${waMessageId})`);
         return { success: true, waMessageId };
     }
     catch (err) {
         const errMsg = err.message;
-        console.error(`[Baileys] ❌ Failed to send media to ${jid}:`, errMsg);
+        console.error(`[Baileys][${resolveTenantId(tenantId)}] ❌ Failed to send media to ${jid}:`, errMsg);
         return { success: false, error: errMsg };
     }
 }
-async function sendLocation(phone, latitude, longitude, name, address) {
+async function sendLocation(phone, latitude, longitude, name, address, tenantId) {
+    const { sock, connectionStatus } = getSocketForTenant(tenantId);
     if (!sock || connectionStatus !== 'open') {
         return {
             success: false,
@@ -599,7 +736,7 @@ async function sendLocation(phone, latitude, longitude, name, address) {
         return { success: false, error: 'Invalid recipient phone number' };
     }
     try {
-        console.log(`[Baileys] 📍 Sending location pin to ${jid}: (${latitude}, ${longitude}) - ${name || ''}...`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] 📍 Sending location pin to ${jid}: (${latitude}, ${longitude}) - ${name || ''}...`);
         const result = await sock.sendMessage(jid, {
             location: {
                 degreesLatitude: latitude,
@@ -609,33 +746,52 @@ async function sendLocation(phone, latitude, longitude, name, address) {
             },
         });
         const waMessageId = result?.key?.id ?? undefined;
-        console.log(`[Baileys] ✅ Location pin sent to ${jid} (ID: ${waMessageId})`);
+        console.log(`[Baileys][${resolveTenantId(tenantId)}] ✅ Location pin sent to ${jid} (ID: ${waMessageId})`);
         return { success: true, waMessageId };
     }
     catch (err) {
         const errMsg = err.message;
-        console.error(`[Baileys] ❌ Failed to send location to ${jid}:`, errMsg);
+        console.error(`[Baileys][${resolveTenantId(tenantId)}] ❌ Failed to send location to ${jid}:`, errMsg);
         return { success: false, error: errMsg };
     }
 }
-async function resetWhatsAppSession() {
+/**
+ * Resets WhatsApp session for a specific tenant and generates a fresh QR code.
+ * Other tenants are 100% unaffected.
+ */
+async function resetWhatsAppSession(tenantIdInput) {
+    const tenantId = resolveTenantId(tenantIdInput);
+    const session = sessions.get(tenantId);
     try {
-        console.log('[Baileys] 🔄 Resetting WhatsApp session and clearing auth credentials...');
-        if (sock) {
+        console.log(`[Baileys][${tenantId}] 🔄 Resetting WhatsApp session and clearing auth credentials...`);
+        if (session?.sock) {
             try {
-                sock.end(undefined);
+                session.sock.end(undefined);
             }
             catch { }
-            sock = null;
+            session.sock = null;
         }
-        connectionStatus = 'connecting';
-        latestQrDataUrl = null;
-        isConnecting = false;
-        if (fs_1.default.existsSync(AUTH_FOLDER)) {
-            fs_1.default.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+        if (session) {
+            session.connectionStatus = 'connecting';
+            session.latestQrDataUrl = null;
+            session.isConnecting = false;
+            session.phoneNumber = undefined;
+        }
+        const authFolder = session?.authFolder || getAuthFolderForTenant(tenantId);
+        if (fs_1.default.existsSync(authFolder)) {
+            fs_1.default.rmSync(authFolder, { recursive: true, force: true });
+        }
+        if (tenantId !== 'master') {
+            try {
+                const Tenant = (await Promise.resolve().then(() => __importStar(require('../models/tenant.model')))).default;
+                await Tenant.findByIdAndUpdate(tenantId, {
+                    $set: { 'whatsappConfig.status': 'disconnected', 'whatsappConfig.phoneNumber': '' },
+                });
+            }
+            catch { }
         }
         setTimeout(() => {
-            startWhatsApp().catch(err => console.error('[Baileys] Start after reset error:', err));
+            startWhatsApp(tenantId).catch(err => console.error(`[Baileys][${tenantId}] Start after reset error:`, err));
         }, 1000);
         return { success: true, message: 'Session reset initiated. Scan the new QR code in settings.' };
     }

@@ -2,7 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const campaign_controller_1 = require("../controllers/campaign.controller");
+const adminAuth_1 = require("../middleware/adminAuth");
 const router = (0, express_1.Router)();
+router.use(adminAuth_1.adminAuth);
 router.get('/stats', campaign_controller_1.getStats);
 router.get('/audiences', campaign_controller_1.getAudienceCounts);
 router.get('/templates', campaign_controller_1.getTemplates);

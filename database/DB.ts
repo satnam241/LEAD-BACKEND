@@ -1,5 +1,5 @@
-
 import mongoose from "mongoose";
+import { initMasterTenantAndPlans } from "./seedMasterTenant";
 
 export const connectDB = async (): Promise<void> => {
   try {
@@ -14,6 +14,9 @@ export const connectDB = async (): Promise<void> => {
     await mongoose.connect(mongoURI);
 
     console.log(" MongoDB connected successfully");
+
+    // Initialize Master Tenant, Plans, and backfill existing data
+    await initMasterTenantAndPlans();
   } catch (error) {
     console.error("MongoDB connection error:", error);
     process.exit(1);

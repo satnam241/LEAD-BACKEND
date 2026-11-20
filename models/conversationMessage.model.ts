@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IConversationMessage extends Document {
+  tenantId?: Types.ObjectId | null;
   leadId: Types.ObjectId;
   phone: string;
   role: 'user' | 'assistant';
@@ -10,6 +11,7 @@ export interface IConversationMessage extends Document {
 
 const ConversationMessageSchema = new Schema<IConversationMessage>(
   {
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
     phone: { type: String, required: true, index: true },
     role: { type: String, enum: ['user', 'assistant'], required: true },

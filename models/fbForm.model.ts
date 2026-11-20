@@ -5,6 +5,7 @@ export interface IFbForm extends Document {
   name: string;
   locale: string;
   status: string;
+  tenantId?: Types.ObjectId | null;
   projectId: Types.ObjectId | null;
   suggestedProject: string | null;
   lastSyncedAt: Date;
@@ -14,7 +15,8 @@ export interface IFbForm extends Document {
 
 const FbFormSchema = new Schema<IFbForm>(
   {
-    formId: { type: String, required: true, unique: true, trim: true, index: true },
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
+    formId: { type: String, required: true, trim: true, index: true },
     name: { type: String, required: true, trim: true },
     locale: { type: String, default: 'en_US', trim: true },
     status: { type: String, default: 'ACTIVE', trim: true },

@@ -35,7 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const FbFormSchema = new mongoose_1.Schema({
-    formId: { type: String, required: true, unique: true, trim: true, index: true },
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
+    formId: { type: String, required: true, trim: true, index: true },
     name: { type: String, required: true, trim: true },
     locale: { type: String, default: 'en_US', trim: true },
     status: { type: String, default: 'ACTIVE', trim: true },

@@ -8,8 +8,11 @@ import {
   getLeadMessages,
   resumeLeadAi,
 } from '../controllers/aiChat.controller';
+import { adminAuth } from '../middleware/adminAuth';
 
 const router = Router();
+
+router.use(adminAuth);
 
 router.get('/', listLeadInterest);
 router.get('/:leadId', getLeadInterestById);

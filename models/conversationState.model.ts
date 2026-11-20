@@ -9,6 +9,7 @@ export interface ConversationAnswer {
 }
 
 export interface ConversationStateDoc extends Document {
+  tenantId?: Types.ObjectId | null;
   leadId: Types.ObjectId;
   phone: string;
   currentStep: string;
@@ -41,6 +42,7 @@ const answerSchema = new Schema<ConversationAnswer>(
 
 const conversationStateSchema = new Schema<ConversationStateDoc>(
   {
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true },
     phone: { type: String, required: true, index: true },
     currentStep: { type: String, required: true },

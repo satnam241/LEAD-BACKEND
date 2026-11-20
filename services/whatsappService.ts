@@ -44,14 +44,15 @@ function normalizeToIndianWhatsApp(phone: string): string {
 export const sendWhatsAppUnified = async (
   toPhone: string,
   text?: string,
-  mediaUrl?: string
+  mediaUrl?: string,
+  tenantId?: string
 ) => {
   if (!toPhone) {
     throw new Error("Recipient phone number is required");
   }
 
   const norm = normalizeToIndianWhatsApp(toPhone);
-  const { status: baileysStatus } = getBaileysStatus();
+  const { status: baileysStatus } = getBaileysStatus(tenantId);
 
   // ------------------------------------
   // 🟢 1. BAILEYS (WHATSAPP WEB) FLOW
@@ -60,9 +61,9 @@ export const sendWhatsAppUnified = async (
     console.log(`📤 Sending via Baileys → ${norm}`);
     let outcome;
     if (mediaUrl) {
-      outcome = await sendBaileysMedia(norm, mediaUrl, text);
+      outcome = await sendBaileysMedia(norm, mediaUrl, text, tenantId);
     } else {
-      outcome = await sendBaileysText(norm, text || "");
+      outcome = await sendBaileysText(norm, text || "", tenantId);
     }
 
     if (outcome.success) {

@@ -8,6 +8,7 @@ const answerSchema = new mongoose_1.Schema({
     answeredAt: { type: Date, default: Date.now },
 }, { _id: false });
 const conversationStateSchema = new mongoose_1.Schema({
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     leadId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'Lead', required: true },
     phone: { type: String, required: true, index: true },
     currentStep: { type: String, required: true },

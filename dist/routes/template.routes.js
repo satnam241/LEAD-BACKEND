@@ -2,8 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const template_controller_1 = require("../controllers/template.controller");
+const adminAuth_1 = require("../middleware/adminAuth");
 const upload_1 = require("../middleware/upload");
 const router = (0, express_1.Router)();
+router.use(adminAuth_1.adminAuth);
 router.get('/', template_controller_1.listTemplates);
 router.get('/default', template_controller_1.getDefaultTemplate);
 router.patch('/:id/default', template_controller_1.setDefaultTemplate);

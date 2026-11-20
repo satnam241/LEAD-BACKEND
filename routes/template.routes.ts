@@ -8,9 +8,12 @@ import {
   getDefaultTemplate,
   setDefaultTemplate,
 } from '../controllers/template.controller';
+import { adminAuth } from '../middleware/adminAuth';
 import { upload } from '../middleware/upload';
 
 const router = Router();
+
+router.use(adminAuth);
 
 router.get('/', listTemplates);
 router.get('/default', getDefaultTemplate);

@@ -3,6 +3,39 @@
 // // import fetch from "node-fetch";
 // // import Lead from "../models/lead.model";
 // // import { normalizePhone } from "../services/phone";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -566,15 +599,28 @@ router.post("/facebook", async (req, res) => {
                     ? (0, phone_1.normalizePhone)(rawPhone)
                     : null;
                 // ==========================================
-                // 📋 FB FORM CHECK & AUTO-REGISTER / PROJECT LOOKUP
+                // 📋 FB FORM CHECK & AUTO-REGISTER / TENANT & PROJECT LOOKUP
                 // ==========================================
                 let matchedProjectId = null;
+                let matchedTenantId = null;
                 if (form_id) {
                     try {
                         let fbForm = await fbForm_model_1.default.findOne({ formId: form_id });
-                        if (!fbForm) {
+                        if (fbForm) {
+                            if (fbForm.projectId)
+                                matchedProjectId = fbForm.projectId;
+                            if (fbForm.tenantId)
+                                matchedTenantId = fbForm.tenantId;
+                        }
+                        else {
+                            const Tenant = (await Promise.resolve().then(() => __importStar(require("../models/tenant.model")))).default;
+                            const matchingTenant = await Tenant.findOne({ "facebookConfig.formIds": form_id });
+                            if (matchingTenant) {
+                                matchedTenantId = matchingTenant._id;
+                            }
                             fbForm = await fbForm_model_1.default.create({
                                 formId: form_id,
+                                tenantId: matchedTenantId,
                                 name: formName || 'Untitled Form',
                                 locale: 'en_US',
                                 status: 'ACTIVE',
@@ -584,12 +630,34 @@ router.post("/facebook", async (req, res) => {
                             });
                             console.log(`📋 Auto-registered new FB Form for mapping: ${form_id} (${formName || 'Untitled'})`);
                         }
-                        if (fbForm.projectId) {
-                            matchedProjectId = fbForm.projectId;
-                        }
                     }
                     catch (formErr) {
                         console.error('⚠️ Error checking/upserting FbForm in webhook:', formErr?.message || formErr);
+                    }
+                }
+                if (!matchedTenantId) {
+                    try {
+                        const Tenant = (await Promise.resolve().then(() => __importStar(require("../models/tenant.model")))).default;
+                        const masterTenant = await Tenant.findOne({ isMaster: true });
+                        if (masterTenant)
+                            matchedTenantId = masterTenant._id;
+                    }
+                    catch { }
+                }
+                // ── Real-Time Monthly Limit Guard ──
+                if (matchedTenantId) {
+                    try {
+                        const { canTenantAddLeads, checkAndSendLeadLimitNotification } = await Promise.resolve().then(() => __importStar(require("../services/tenantLimitService")));
+                        const limitCheck = await canTenantAddLeads(matchedTenantId, 1);
+                        if (!limitCheck.allowed) {
+                            console.warn(`⚠️ [FB Webhook] Tenant ${matchedTenantId} reached monthly lead limit (${limitCheck.currentCount}/${limitCheck.maxLeads}). Ingestion paused.`);
+                            checkAndSendLeadLimitNotification(matchedTenantId).catch(console.error);
+                            res.status(200).send("EVENT_RECEIVED");
+                            return;
+                        }
+                    }
+                    catch (limErr) {
+                        console.error("⚠️ Error checking tenant limit in FB webhook:", limErr?.message || limErr);
                     }
                 }
                 // ==========================================
@@ -605,6 +673,7 @@ router.post("/facebook", async (req, res) => {
                         "true",
                     message,
                     source: "facebook",
+                    tenantId: matchedTenantId,
                     formId: form_id,
                     formName: formName,
                     projectId: matchedProjectId,
@@ -614,6 +683,15 @@ router.post("/facebook", async (req, res) => {
                     receivedAt: new Date(),
                 });
                 console.log("🆕 New lead saved:", newLead._id);
+                if (matchedTenantId) {
+                    (async () => {
+                        try {
+                            const { checkAndSendLeadLimitNotification } = await Promise.resolve().then(() => __importStar(require("../services/tenantLimitService")));
+                            await checkAndSendLeadLimitNotification(matchedTenantId);
+                        }
+                        catch { }
+                    })();
+                }
                 // Auto message to new Facebook lead (non-blocking)
                 (async () => {
                     try {

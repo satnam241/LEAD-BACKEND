@@ -6,17 +6,19 @@ import {
   getLeadsController,
   restoreLeadController,
   bulkDeleteLeadsController,
-  bulkRestoreLeadsController 
+  bulkRestoreLeadsController,
 } from "../controllers/leadController";
+import { adminAuth } from "../middleware/adminAuth";
 
 const router = express.Router();
 
-router.post("/leads", createLeadController);
-router.get("/leads", getLeadsController);
-router.put("/leads/:id", updateLeadController);
-router.delete("/leads/:id", deleteLeadController);
-router.patch("/leads/bulk-delete", bulkDeleteLeadsController);
-router.patch("/leads/:id/restore", restoreLeadController);
-router.patch("/leads/bulk-restore", bulkRestoreLeadsController);
+// CRM Lead Management Routes (Protected by adminAuth)
+router.post("/leads", adminAuth, createLeadController);
+router.get("/leads", adminAuth, getLeadsController);
+router.put("/leads/:id", adminAuth, updateLeadController);
+router.delete("/leads/:id", adminAuth, deleteLeadController);
+router.patch("/leads/bulk-delete", adminAuth, bulkDeleteLeadsController);
+router.patch("/leads/:id/restore", adminAuth, restoreLeadController);
+router.patch("/leads/bulk-restore", adminAuth, bulkRestoreLeadsController);
 
 export default router;

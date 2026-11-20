@@ -9,7 +9,7 @@ import Admin from "../models/admin.model";
 import Lead from "../models/lead.model";
 import ExcelJS from "exceljs";
 import XLSX from "xlsx";
-// import { getTenantFilter, AuthenticatedRequest } from "../middleware/adminAuth";
+import { getTenantFilter, AuthenticatedRequest } from "../middleware/adminAuth";
 
 const getEmail = (row: any) => {
   const possibleKeys = [
@@ -84,13 +84,17 @@ export const adminLogin = async (req: Request, res: Response) => {
     }
     */
 
-    const role = (admin as any).role || "admin";
+    let role = (admin as any).role;
+    if (!role) {
+      role = admin.tenantId ? "tenant_admin" : "super_admin";
+    }
+    const tenantId = (admin as any).tenantId ? String((admin as any).tenantId) : undefined;
     const token = jwt.sign(
       {
         id: admin._id,
         userId: admin._id,
         role,
-        // tenantId: tenantId ? String(tenantId) : undefined,
+        tenantId,
         email: admin.email,
       },
       JWT_SECRET,
@@ -99,7 +103,16 @@ export const adminLogin = async (req: Request, res: Response) => {
     res.json({
       success: true,
       token,
-      admin: { id: admin._id, email: admin.email, name: admin.name /*, role, tenantId */ },
+      admin: {
+        id: admin._id,
+        _id: admin._id,
+        email: admin.email,
+        name: admin.name,
+        role,
+        tenantId,
+        companyName: (admin as any).companyName || null,
+        status: (admin as any).status || "active",
+      },
     });
   } catch (err) {
     console.error("Admin login error:", err);
@@ -180,8 +193,7 @@ export const adminGetLeads = async (req: Request, res: Response) => {
       interestLevel,
     } = req.query as Record<string, string>;
 
-    // const tenantFilter = getTenantFilter(req as any);
-    const tenantFilter = {};
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const filter: Record<string, any> = { isDeleted: false, ...tenantFilter };
 
     // ✅ FIX: Status filter — accept any case, store lowercase
@@ -195,7 +207,7 @@ export const adminGetLeads = async (req: Request, res: Response) => {
       let matchedLeadIds: any[] = [];
       try {
         const ConversationState = (await import("../models/conversationState.model")).default;
-        const states = await ConversationState.find().lean();
+        const states = await ConversationState.find(tenantFilter).lean();
         for (const s of states) {
           const comp = s.attemptCount === 0 ? 'cold' : (s.completedAt || s.attemptCount >= 1) ? 'hot' : 'warm';
           if (comp === rawInterest && s.leadId) {
@@ -295,7 +307,8 @@ export const adminExportLeads = async (req: Request, res: Response) => {
   try {
     const { format = "xlsx", status, interest, interestLevel } = req.query as Record<string, string>;
 
-    const filter: Record<string, any> = { isDeleted: false };
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const filter: Record<string, any> = { isDeleted: false, ...tenantFilter };
     if (status && status !== "all") filter.status = status.toLowerCase();
 
     const rawInterest = (interest || interestLevel || "").toLowerCase().trim();
@@ -400,8 +413,7 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: "No fields provided to update" });
     }
 
-    // const tenantFilter = getTenantFilter(req as any);
-    const tenantFilter = {};
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const lead = await Lead.findOneAndUpdate({ _id: id, ...tenantFilter }, setFields, { new: true });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
 
@@ -416,8 +428,7 @@ export const adminUpdateLead = async (req: Request, res: Response) => {
 export const adminDeleteLead = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    // const tenantFilter = getTenantFilter(req as any);
-    const tenantFilter = {};
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const lead   = await Lead.findOneAndDelete({ _id: id, ...tenantFilter });
     if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
     res.json({ success: true, message: "Lead deleted successfully" });
@@ -428,9 +439,11 @@ export const adminDeleteLead = async (req: Request, res: Response) => {
 };
 
 // ── Daily Stats ───────────────────────────────────────────────────────────────
-export const adminDailyStats = async (_req: Request, res: Response) => {
+export const adminDailyStats = async (req: Request, res: Response) => {
   try {
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const stats = await Lead.aggregate([
+      { $match: { isDeleted: false, ...tenantFilter } },
       {
         $group: {
           _id: {
@@ -451,10 +464,11 @@ export const adminDailyStats = async (_req: Request, res: Response) => {
 };
 
 // ── Stats Summary ─────────────────────────────────────────────────────────────
-export const adminStatsSummary = async (_req: Request, res: Response) => {
+export const adminStatsSummary = async (req: Request, res: Response) => {
   try {
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const counts = await Lead.aggregate([
-      { $match: { isDeleted: false } },
+      { $match: { isDeleted: false, ...tenantFilter } },
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
@@ -519,8 +533,24 @@ export const importLeadsController = async (req: Request, res: Response) => {
       return cleanedRow;
     });
 
+    const tenantId = (req as any).tenantId;
+    if (tenantId) {
+      const { canTenantAddLeads } = await import("../services/tenantLimitService");
+      const check = await canTenantAddLeads(tenantId, cleanedData.length);
+      if (!check.allowed) {
+        return res.status(403).json({
+          success: false,
+          error: `Cannot import ${cleanedData.length} leads. Your plan only has ${check.remaining} leads remaining this month (${check.currentCount}/${check.maxLeads}). Please upgrade your plan.`,
+          remaining: check.remaining,
+          currentCount: check.currentCount,
+          maxLeads: check.maxLeads,
+        });
+      }
+    }
+
     for (const row of cleanedData) {
       await Lead.create({
+        tenantId: tenantId || null,
         fullName: row.fullName || row.name || row["Full Name"] || row["full_name"] || "Unknown User",
         email:    getEmail(row),
         phone:    getPhone(row),
@@ -532,6 +562,15 @@ export const importLeadsController = async (req: Request, res: Response) => {
         rawData:     row,
         receivedAt:  new Date(),
       });
+    }
+
+    if (tenantId) {
+      (async () => {
+        try {
+          const { checkAndSendLeadLimitNotification } = await import("../services/tenantLimitService");
+          await checkAndSendLeadLimitNotification(tenantId);
+        } catch {}
+      })();
     }
 
     return res.json({
@@ -548,13 +587,28 @@ export const importLeadsController = async (req: Request, res: Response) => {
 
 export const adminGetProfile = async (req: Request, res: Response) => {
   try {
-    const admin = await Admin.findOne().select("-password");
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
+    let admin = null;
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        const targetId = decoded.userId || decoded.id;
+        if (targetId) admin = await Admin.findById(targetId).select("-password");
+      } catch {}
+    }
+    if (!admin) admin = await Admin.findOne().select("-password");
     if (!admin) return res.status(404).json({ success: false, error: "Admin not found" });
 
     res.json({
       _id:   admin._id,
+      id:    admin._id,
       name:  admin.name || "",
       email: admin.email || "",
+      role:  (admin as any).role || "super_admin",
+      tenantId: (admin as any).tenantId || null,
+      companyName: (admin as any).companyName || null,
+      status: (admin as any).status || "active",
       // ✅ Google Calendar status frontend ko bhejna zaroori hai
       googleCalendar: {
         isConnected:  !!(admin.googleCalendar?.refreshToken),
@@ -607,7 +661,9 @@ export const adminUpdateProfile = async (req: Request, res: Response) => {
 // ── Reminder Leads ────────────────────────────────────────────────────────────
 export const getReminderLeads = async (req: Request, res: Response) => {
   try {
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const leads = await Lead.find({
+      ...tenantFilter,
       reminderCount: { $gt: 0, $lte: 5 },
       status:        { $ne: "closed" },
     }).sort({ lastReminderSent: -1 });
@@ -622,7 +678,13 @@ export const getReminderLeads = async (req: Request, res: Response) => {
 export const markAsContacted = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    await Lead.findByIdAndUpdate(id, { status: "contacted", reminderCount: 0 });
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+    const lead = await Lead.findOneAndUpdate(
+      { _id: id, ...tenantFilter },
+      { status: "contacted", reminderCount: 0 },
+      { new: true }
+    );
+    if (!lead) return res.status(404).json({ success: false, error: "Lead not found" });
     return res.json({ success: true, message: "Lead marked as contacted" });
   } catch (error) {
     console.error("Mark contacted error:", error);
@@ -633,7 +695,9 @@ export const markAsContacted = async (req: Request, res: Response) => {
 // ── Pending Reminder Count ────────────────────────────────────────────────────
 export const getPendingReminderCount = async (req: Request, res: Response) => {
   try {
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const count = await Lead.countDocuments({
+      ...tenantFilter,
       status:        { $ne: "closed" },
       reminderCount: { $gte: 1, $lte: 5 },
     });
@@ -642,7 +706,7 @@ export const getPendingReminderCount = async (req: Request, res: Response) => {
     console.error("Pending reminder count error:", error);
     return res.status(500).json({ success: false, error: "Server error" });
   }
-}
+};
 export const adminAdvancedMonthlyReport = async (
   req: Request,
   res: Response
@@ -661,42 +725,46 @@ export const adminAdvancedMonthlyReport = async (
     const prevStartDate = new Date(year, month - 2, 1,  0,  0,  0,   0);
     const prevEndDate   = new Date(year, month - 1, 0, 23, 59, 59, 999);
 
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
+
     // ── QUERIES ───────────────────────────────────────────────────
 
     // Current month total
     const totalLeadsPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
       createdAt: { $gte: startDate, $lte: endDate },
     });
 
     // Previous month total
     const previousMonthLeadsPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
       createdAt: { $gte: prevStartDate, $lte: prevEndDate },
     });
 
     // Current month status breakdown
     const statusCountsPromise = Lead.aggregate([
-      { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+      { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
 
     // ✅ NEW — Previous month status breakdown (for ring chart comparison)
     const prevStatusCountsPromise = Lead.aggregate([
-      { $match: { isDeleted: false, createdAt: { $gte: prevStartDate, $lte: prevEndDate } } },
+      { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: prevStartDate, $lte: prevEndDate } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
 
     // Source wise
     const sourceWisePromise = Lead.aggregate([
-      { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+      { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
       { $group: { _id: '$source', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]);
 
     // Daily growth
     const dailyGrowthPromise = Lead.aggregate([
-      { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+      { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
       { $group: { _id: { day: { $dayOfMonth: '$createdAt' } }, count: { $sum: 1 } } },
       { $sort: { '_id.day': 1 } },
     ]);
@@ -705,6 +773,7 @@ export const adminAdvancedMonthlyReport = async (
     const followupCompletionPromise = Lead.aggregate([
       {
         $match: {
+          ...tenantFilter,
           isDeleted: false,
           'followUp.active': true,
           createdAt: { $gte: startDate, $lte: endDate },
@@ -715,12 +784,13 @@ export const adminAdvancedMonthlyReport = async (
 
     // Lead temperature
     const leadTemperaturePromise = Lead.aggregate([
-      { $match: { isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
+      { $match: { ...tenantFilter, isDeleted: false, createdAt: { $gte: startDate, $lte: endDate } } },
       { $group: { _id: '$leadTemperature', count: { $sum: 1 } } },
     ]);
 
     // ── ALL-TIME STATS (across all leads in DB) ──────────────────
     const allTimeClosedPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
       status: { $regex: /^(closed|converted)$/i },
     });
@@ -729,17 +799,20 @@ export const adminAdvancedMonthlyReport = async (
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     // Overdue follow-ups (day-based: strictly before today, not resolved)
     const allTimeDueFollowupsPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
       'followUp.date': { $ne: null, $lt: startOfToday },
       'followUp.overdueStatus': { $ne: 'resolved' },
     });
 
     const allTimeTotalLeadsPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
     });
 
     // ── CONTACTED IN MONTH (action-based: whether lead is old or new) ──
     const contactedInMonthPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
       $or: [
         { contactedAt: { $gte: startDate, $lte: endDate } },
@@ -755,6 +828,7 @@ export const adminAdvancedMonthlyReport = async (
     });
 
     const prevContactedInMonthPromise = Lead.countDocuments({
+      ...tenantFilter,
       isDeleted: false,
       $or: [
         { contactedAt: { $gte: prevStartDate, $lte: prevEndDate } },
@@ -906,7 +980,9 @@ export const getNotifications = async (req: Request, res: Response) => {
     const in2days  = new Date(now.getTime() + 48 * 60 * 60 * 1000);
  
     // ── Fetch all relevant leads in one query ─────────────────
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const leads = await Lead.find({
+      ...tenantFilter,
       isDeleted: false,
       "followUp.active": true,
       "followUp.date": { $ne: null },
@@ -1040,7 +1116,9 @@ export const adminExportMonthlyReport = async (req: Request, res: Response) => {
     const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
     const endDate   = new Date(year, month, 0, 23, 59, 59, 999);
 
+    const tenantFilter = getTenantFilter(req as AuthenticatedRequest);
     const leads = await Lead.find({
+      ...tenantFilter,
       isDeleted: false,
       createdAt: { $gte: startDate, $lte: endDate },
     }).sort({ createdAt: -1 });

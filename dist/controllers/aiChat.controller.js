@@ -64,6 +64,7 @@ const project_model_1 = __importDefault(require("../models/project.model"));
 const botFlow_model_1 = __importDefault(require("../models/botFlow.model"));
 const llmTrainingLog_model_1 = __importDefault(require("../models/llmTrainingLog.model"));
 const aiLearningService_1 = require("../services/aiLearningService");
+const adminAuth_1 = require("../middleware/adminAuth");
 // GET /api/ai-chat/health - Check active LLM provider and queue status
 async function getAiHealth(_req, res) {
     try {
@@ -91,7 +92,8 @@ async function getAiHealth(_req, res) {
 async function getLeadMessages(req, res) {
     try {
         const { leadId } = req.params;
-        const messages = await conversationMessage_model_1.default.find({ leadId }).sort({ createdAt: 1 }).lean();
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const messages = await conversationMessage_model_1.default.find({ leadId, ...tenantFilter }).sort({ createdAt: 1 }).lean();
         res.json({ success: true, messages });
     }
     catch (err) {
@@ -102,7 +104,8 @@ async function getLeadMessages(req, res) {
 async function resumeLeadAi(req, res) {
     try {
         const { leadId } = req.params;
-        const state = await conversationState_model_1.default.findOneAndUpdate({ leadId }, { $set: { aiPaused: false, needsAgent: false } }, { new: true });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const state = await conversationState_model_1.default.findOneAndUpdate({ leadId, ...tenantFilter }, { $set: { aiPaused: false, needsAgent: false } }, { new: true });
         if (!state) {
             res.status(404).json({ success: false, error: 'Conversation state not found for this lead' });
             return;
@@ -120,7 +123,8 @@ async function resumeLeadAi(req, res) {
 async function getTrainingData(req, res) {
     try {
         const projectId = req.query.projectId;
-        let query = { isActive: true };
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        let query = { isActive: true, ...tenantFilter };
         if (projectId) {
             query._id = projectId;
         }
@@ -505,7 +509,7 @@ async function exportTrainingLogsJsonl(req, res) {
                 messages: [
                     {
                         role: 'system',
-                        content: `You are the AI Property Consultant for Bhole Baba Investments Real Estate. Project: ${log.projectName || 'General'}. Respond accurately in ${log.language}.`,
+                        content: `You are the AI Property Consultant for ${log.projectName ? `${log.projectName} Real Estate` : 'our Real Estate Advisory'}. Project: ${log.projectName || 'General'}. Respond accurately in ${log.language}.`,
                     },
                     { role: 'user', content: log.userMessage },
                     { role: 'assistant', content: log.aiResponse },

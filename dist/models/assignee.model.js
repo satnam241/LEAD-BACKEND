@@ -33,11 +33,11 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// models/assignee.model.ts
 const mongoose_1 = __importStar(require("mongoose"));
 const AssigneeSchema = new mongoose_1.Schema({
+    tenantId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     name: { type: String, required: true, trim: true },
 }, { timestamps: true });
-AssigneeSchema.index({ name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
+AssigneeSchema.index({ tenantId: 1, name: 1 }, { unique: true, collation: { locale: "en", strength: 2 } });
 exports.default = mongoose_1.default.model("Assignee", AssigneeSchema);
 //# sourceMappingURL=assignee.model.js.map

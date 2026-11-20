@@ -1,7 +1,4 @@
 "use strict";
-// import { Request, Response } from "express";
-// import Lead from "../models/lead.model";
-// import { sendMessageToLead } from "../services/messageService";
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -9,14 +6,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getLeadsController = exports.bulkRestoreLeadsController = exports.bulkDeleteLeadsController = exports.restoreLeadController = exports.deleteLeadController = exports.updateLeadController = exports.createLeadController = void 0;
 const lead_model_1 = __importDefault(require("../models/lead.model"));
 const messageService_1 = require("../services/messageService");
+const adminAuth_1 = require("../middleware/adminAuth");
+const tenantLimitService_1 = require("../services/tenantLimitService");
 function extractFields(rawData) {
     const extracted = {
-        fullName: null, email: null, phone: null,
-        message: null, source: "facebook", extraFields: {},
+        fullName: null,
+        email: null,
+        phone: null,
+        message: null,
+        source: "facebook",
+        extraFields: {},
     };
     if (!rawData)
         return extracted;
-    const messageKeys = ["message", "description", "query", "requirement", "comment", "details", "note", "feedback"];
+    const messageKeys = [
+        "message",
+        "description",
+        "query",
+        "requirement",
+        "comment",
+        "details",
+        "note",
+        "feedback",
+    ];
     if (Array.isArray(rawData.field_data)) {
         for (const f of rawData.field_data) {
             const key = (f.name || "").toLowerCase();
@@ -60,19 +72,29 @@ function extractFields(rawData) {
 // ── Create Lead ───────────────────────────────────────────────────────────────
 const createLeadController = async (req, res) => {
     try {
-        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, status: bodyStatus, followUp: bodyFollowUp, rawData, message: bodyMessage, note: bodyNote, // ✅ FIX — add kiya
-        assignedTo, assignedBy, interestLevel: bodyInterestLevel, interest: bodyInterest, } = req.body;
+        const tenantId = req.tenantId || req.body.tenantId;
+        // Real-time monthly limit check
+        if (tenantId) {
+            const check = await (0, tenantLimitService_1.canTenantAddLeads)(tenantId, 1);
+            if (!check.allowed) {
+                return res.status(403).json({
+                    success: false,
+                    error: check.error,
+                    limitReached: true,
+                    currentCount: check.currentCount,
+                    maxLeads: check.maxLeads,
+                });
+            }
+        }
+        const { fullName: bodyFullName, email: bodyEmail, phone: bodyPhone, phoneVerified, whenAreYouPlanningToPurchase, whatIsYourBudget, source: bodySource, status: bodyStatus, followUp: bodyFollowUp, rawData, message: bodyMessage, note: bodyNote, assignedTo, assignedBy, interestLevel: bodyInterestLevel, interest: bodyInterest, projectId, } = req.body;
         const extracted = extractFields(rawData || {});
         const fullName = bodyFullName || extracted.fullName || "Unknown User";
         const email = bodyEmail || extracted.email || null;
         const phone = bodyPhone || extracted.phone || null;
-        // ✅ FIX: risky random-string fallback hata diya — ab email/budget jaisi
-        // koi bhi random 10+ char string message mein nahi jayegi
         const message = bodyMessage ||
             extracted.message ||
             rawData?.message ||
             "No message provided";
-        // ✅ FIX: budget/timeline — body se ya extracted.extraFields se (jahan bhi mile)
         const finalBudget = whatIsYourBudget ||
             extracted.extraFields?.["what_is_your_budget_"] ||
             null;
@@ -84,28 +106,38 @@ const createLeadController = async (req, res) => {
         const finalInterest = rawInterest && ["hot", "warm", "cold"].includes(String(rawInterest).toLowerCase().trim())
             ? String(rawInterest).toLowerCase().trim()
             : null;
-        if (!fullName && !email && !phone)
+        if (!fullName && !email && !phone) {
             return res.status(400).json({ error: "Lead must include at least one of: fullName, email, or phone." });
+        }
         const isContacted = bodyStatus && String(bodyStatus).toLowerCase() === "contacted";
         const lead = new lead_model_1.default({
-            fullName, email, phone,
+            tenantId: tenantId || null,
+            projectId: projectId || null,
+            fullName,
+            email,
+            phone,
             phoneVerified: phoneVerified || false,
             whenAreYouPlanningToPurchase: finalTimeline,
             whatIsYourBudget: finalBudget,
-            message, source,
+            message,
+            source,
             status: bodyStatus ? String(bodyStatus).toLowerCase() : "new",
             contactedAt: isContacted ? new Date() : null,
             statusUpdatedAt: new Date(),
             interestLevel: finalInterest,
             followUp: bodyFollowUp || undefined,
-            note: bodyNote || null, // ✅ FIX — add kiya
+            note: bodyNote || null,
             assignedTo: assignedTo || null,
             assignedBy: assignedBy || null,
             extraFields: extracted.extraFields,
             rawData: { ...rawData, extractedMessage: message, extraFields: extracted.extraFields },
         });
         await lead.save();
-        console.log("🆕 New Lead Created:", String(lead._id));
+        console.log("🆕 New Lead Created:", String(lead._id), tenantId ? `(Tenant: ${tenantId})` : "");
+        // Real-time limit threshold notification check (80% / 100%)
+        if (tenantId) {
+            (0, tenantLimitService_1.checkAndSendLeadLimitNotification)(tenantId).catch(console.error);
+        }
         // Auto message (non-blocking)
         (async () => {
             try {
@@ -132,6 +164,7 @@ const updateLeadController = async (req, res) => {
     try {
         const { id } = req.params;
         const updates = { ...req.body };
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         if (updates.status) {
             updates.status = updates.status.toLowerCase();
             if (updates.status === "contacted") {
@@ -139,21 +172,22 @@ const updateLeadController = async (req, res) => {
             }
             updates.statusUpdatedAt = new Date();
         }
-        if (Object.prototype.hasOwnProperty.call(updates, "interestLevel") || Object.prototype.hasOwnProperty.call(updates, "interest")) {
+        if (Object.prototype.hasOwnProperty.call(updates, "interestLevel") ||
+            Object.prototype.hasOwnProperty.call(updates, "interest")) {
             const raw = updates.interestLevel !== undefined ? updates.interestLevel : updates.interest;
-            updates.interestLevel = raw && ["hot", "warm", "cold"].includes(String(raw).toLowerCase().trim())
-                ? String(raw).toLowerCase().trim()
-                : null;
+            updates.interestLevel =
+                raw && ["hot", "warm", "cold"].includes(String(raw).toLowerCase().trim())
+                    ? String(raw).toLowerCase().trim()
+                    : null;
         }
-        const existingLead = await lead_model_1.default.findById(id);
+        const existingLead = await lead_model_1.default.findOne({ _id: id, ...tenantFilter });
         if (!existingLead)
             return res.status(404).json({ error: "Lead not found" });
-        // ✅ FIX — note update hone par followUp.message bhi sync karo
         const followUpSync = {};
         if (Object.prototype.hasOwnProperty.call(updates, "note")) {
             followUpSync["followUp.message"] = updates.note;
         }
-        const updatedLead = await lead_model_1.default.findByIdAndUpdate(id, {
+        const updatedLead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, {
             $set: {
                 ...updates,
                 ...followUpSync,
@@ -181,11 +215,16 @@ exports.updateLeadController = updateLeadController;
 const deleteLeadController = async (req, res) => {
     try {
         const { id } = req.params;
-        const lead = await lead_model_1.default.findByIdAndUpdate(id, { isDeleted: true, deletedAt: new Date() }, { new: true });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, { isDeleted: true, deletedAt: new Date() }, { new: true });
         if (!lead)
             return res.status(404).json({ error: "Lead not found" });
         console.log("🗑️ Soft deleted lead:", String(lead._id));
-        return res.status(200).json({ success: true, message: "Lead moved to trash", data: { id: lead._id, deletedAt: lead.deletedAt } });
+        return res.status(200).json({
+            success: true,
+            message: "Lead moved to trash",
+            data: { id: lead._id, deletedAt: lead.deletedAt },
+        });
     }
     catch (err) {
         console.error("💥 Error delete Lead:", err);
@@ -197,7 +236,8 @@ exports.deleteLeadController = deleteLeadController;
 const restoreLeadController = async (req, res) => {
     try {
         const { id } = req.params;
-        const lead = await lead_model_1.default.findByIdAndUpdate(id, { isDeleted: false, deletedAt: null }, { new: true });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const lead = await lead_model_1.default.findOneAndUpdate({ _id: id, ...tenantFilter }, { isDeleted: false, deletedAt: null }, { new: true });
         if (!lead)
             return res.status(404).json({ error: "Lead not found" });
         return res.json({ success: true, message: "Lead restored successfully", data: lead });
@@ -212,10 +252,16 @@ exports.restoreLeadController = restoreLeadController;
 const bulkDeleteLeadsController = async (req, res) => {
     try {
         const { ids } = req.body;
-        if (!Array.isArray(ids) || ids.length === 0)
+        if (!Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ success: false, error: "ids array is required" });
-        const result = await lead_model_1.default.updateMany({ _id: { $in: ids } }, { isDeleted: true, deletedAt: new Date() });
-        return res.json({ success: true, message: "Leads moved to trash", modifiedCount: result.modifiedCount });
+        }
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const result = await lead_model_1.default.updateMany({ _id: { $in: ids }, ...tenantFilter }, { isDeleted: true, deletedAt: new Date() });
+        return res.json({
+            success: true,
+            message: "Leads moved to trash",
+            modifiedCount: result.modifiedCount,
+        });
     }
     catch (err) {
         console.error("💥 Bulk delete error:", err);
@@ -227,8 +273,13 @@ exports.bulkDeleteLeadsController = bulkDeleteLeadsController;
 const bulkRestoreLeadsController = async (req, res) => {
     try {
         const { ids } = req.body;
-        const result = await lead_model_1.default.updateMany({ _id: { $in: ids } }, { isDeleted: false, deletedAt: null });
-        return res.json({ success: true, message: "Leads restored", modifiedCount: result.modifiedCount });
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
+        const result = await lead_model_1.default.updateMany({ _id: { $in: ids }, ...tenantFilter }, { isDeleted: false, deletedAt: null });
+        return res.json({
+            success: true,
+            message: "Leads restored",
+            modifiedCount: result.modifiedCount,
+        });
     }
     catch (err) {
         console.error("Bulk restore error:", err);
@@ -240,13 +291,14 @@ exports.bulkRestoreLeadsController = bulkRestoreLeadsController;
 const getLeadsController = async (req, res) => {
     try {
         const { id, email, phone, source, followupFilter, interest, interestLevel } = req.query;
+        const tenantFilter = (0, adminAuth_1.getTenantFilter)(req);
         if (id) {
-            const lead = await lead_model_1.default.findById(id).lean();
+            const lead = await lead_model_1.default.findOne({ _id: id, ...tenantFilter }).lean();
             if (!lead)
                 return res.status(404).json({ error: "Lead not found" });
             return res.status(200).json(lead);
         }
-        const filters = {};
+        const filters = { isDeleted: false, ...tenantFilter };
         if (email && email !== "null" && email !== "")
             filters.email = String(email).trim().toLowerCase();
         if (phone && phone !== "null" && phone !== "")

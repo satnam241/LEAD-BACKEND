@@ -36,6 +36,7 @@ export interface IProject extends Document {
   map?: string;
   brochure?: string;
   isActive: boolean;
+  tenantId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,6 +61,7 @@ const ProjectFAQSchema = new Schema<IProjectFAQ>(
 
 const ProjectSchema = new Schema<IProject>(
   {
+    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
     name: { type: String, required: true, trim: true, index: true },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
     keywords: [{ type: String, trim: true }],
