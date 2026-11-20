@@ -20,6 +20,8 @@ const ALLOWED_MIME_TYPES = new Set([
   "video/webm",
   "video/quicktime",
   "video/x-matroska",
+  "video/mpeg",
+  "video/3gpp",
   "application/pdf",
 ]);
 
@@ -33,6 +35,7 @@ const ALLOWED_EXTENSIONS = new Set([
   ".webm",
   ".mov",
   ".mkv",
+  ".3gp",
   ".pdf",
 ]);
 
@@ -75,6 +78,6 @@ export const uploadMedia = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit for videos and large maps
+    fileSize: 200 * 1024 * 1024, // 200MB limit for high-definition video walkthroughs and documents
   },
 });
