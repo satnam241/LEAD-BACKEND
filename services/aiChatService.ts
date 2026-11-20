@@ -172,7 +172,7 @@ export async function getSalesContactPhone(tenantId?: any): Promise<string> {
   } catch (err: any) {
     console.error('[SalesPhone] Error resolving sales contact phone:', err?.message || err);
   }
-  return process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '+91 99999 99999';
+  return process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '+91 98558 69999';
 }
 
 export function formatDisplayPhone(rawPhone: string): string {

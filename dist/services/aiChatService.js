@@ -200,7 +200,7 @@ async function getSalesContactPhone(tenantId) {
     catch (err) {
         console.error('[SalesPhone] Error resolving sales contact phone:', err?.message || err);
     }
-    return process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '+91 99999 99999';
+    return process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '+91 98558 69999';
 }
 function formatDisplayPhone(rawPhone) {
     if (!rawPhone)

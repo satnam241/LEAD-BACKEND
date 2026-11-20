@@ -130,7 +130,7 @@ async function initMasterTenantAndPlans() {
         // Find existing super admin or first admin
         const existingAdmin = await admin_model_1.default.findOne({ role: "super_admin" }) || await admin_model_1.default.findOne();
         const masterEmail = existingAdmin?.email || process.env.EMAIL_GOOGLE_USER || "admin@realestate.com";
-        const masterPhone = existingAdmin?.phone || "9999999999";
+        const masterPhone = (existingAdmin?.phone && !existingAdmin.phone.includes("99999")) ? existingAdmin.phone : (process.env.SUPPORT_PHONE || "9855869999");
         const masterCompany = existingAdmin?.companyName || "Bhole Baba Investments";
         const masterOwner = existingAdmin?.name || "Super Admin";
         if (!masterTenant) {
@@ -177,6 +177,11 @@ async function initMasterTenantAndPlans() {
             });
             console.log(`🏛️ Master Tenant initialized: "${masterTenant.name}" (${masterTenant._id})`);
         }
+        else if (!masterTenant.phone || masterTenant.phone.includes("99999")) {
+            masterTenant.phone = "9855869999";
+            await masterTenant.save();
+            console.log(`📞 Master Tenant phone updated to: ${masterTenant.phone}`);
+        }
         // 4. Update existing Super Admin record to attach masterTenant
         if (existingAdmin) {
             let needsSave = false;
@@ -190,6 +195,10 @@ async function initMasterTenantAndPlans() {
             }
             if (!existingAdmin.companyName) {
                 existingAdmin.companyName = masterTenant.name;
+                needsSave = true;
+            }
+            if (!existingAdmin.phone || existingAdmin.phone.includes("99999")) {
+                existingAdmin.phone = "9855869999";
                 needsSave = true;
             }
             if (needsSave) {
