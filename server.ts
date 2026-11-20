@@ -89,8 +89,8 @@ app.use("/api/uploads", express.static(uploadsDir, staticOptions));
 app.use("/public", express.static(path.join(process.cwd(), "public"), staticOptions));
 app.use("/api/public", express.static(path.join(process.cwd(), "public"), staticOptions));
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "250mb" }));
+app.use(express.urlencoded({ extended: true, limit: "250mb" }));
 
 // 🛡️ Global NoSQL Injection Sanitizer
 app.use(noSqlSanitizer);

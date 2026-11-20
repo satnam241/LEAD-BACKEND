@@ -77,8 +77,8 @@ app.use("/api/public/uploads", express_1.default.static(uploadsDir, staticOption
 app.use("/api/uploads", express_1.default.static(uploadsDir, staticOptions));
 app.use("/public", express_1.default.static(path_1.default.join(process.cwd(), "public"), staticOptions));
 app.use("/api/public", express_1.default.static(path_1.default.join(process.cwd(), "public"), staticOptions));
-app.use(express_1.default.json({ limit: "10mb" }));
-app.use(express_1.default.urlencoded({ extended: true }));
+app.use(express_1.default.json({ limit: "250mb" }));
+app.use(express_1.default.urlencoded({ extended: true, limit: "250mb" }));
 // 🛡️ Global NoSQL Injection Sanitizer
 app.use(security_middleware_1.noSqlSanitizer);
 app.get("/", (_req, res) => {

@@ -73,7 +73,7 @@ exports.uploadMedia = (0, multer_1.default)({
     storage,
     fileFilter,
     limits: {
-        fileSize: 200 * 1024 * 1024, // 200MB limit for high-definition video walkthroughs and documents
+        fileSize: 250 * 1024 * 1024, // 250MB limit for high-definition video walkthroughs and documents
     },
 });
 //# sourceMappingURL=upload.js.map
