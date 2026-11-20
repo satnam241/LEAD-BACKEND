@@ -127,7 +127,7 @@ const getCorsOriginDelegate = () => {
             return callback(null, true);
         }
         console.warn(`[Security] Blocked unauthorized CORS origin: ${origin}`);
-        callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+        callback(null, false);
     };
 };
 exports.getCorsOriginDelegate = getCorsOriginDelegate;
