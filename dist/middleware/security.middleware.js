@@ -92,6 +92,10 @@ const DEFAULT_DEV_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:3000",
+    "https://leads.sharesampatti.com",
+    "https://api.sharesampatti.com",
+    "https://sharesampatti.com",
+    "https://www.sharesampatti.com",
 ];
 const getCorsOriginDelegate = () => {
     const envOrigins = process.env.ALLOWED_ORIGINS
@@ -107,6 +111,17 @@ const getCorsOriginDelegate = () => {
         if (allowedList.has(origin)) {
             return callback(null, true);
         }
+        // Automatically allow all sharesampatti.com domains & subdomains (e.g. leads.sharesampatti.com)
+        try {
+            const parsed = new URL(origin);
+            if (parsed.hostname === "sharesampatti.com" ||
+                parsed.hostname.endsWith(".sharesampatti.com") ||
+                parsed.hostname === "localhost" ||
+                parsed.hostname === "127.0.0.1") {
+                return callback(null, true);
+            }
+        }
+        catch { }
         // In development mode, allow all origins with warning
         if (process.env.NODE_ENV !== "production") {
             return callback(null, true);

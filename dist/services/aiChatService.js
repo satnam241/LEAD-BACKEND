@@ -447,11 +447,15 @@ function cleanWhatsAppReply(text) {
         return '';
     return text
         .replace(/^["']|["']$/g, '')
+        // Strip raw server upload paths or download links to ensure native WhatsApp attachment UX
+        .replace(/(?:https?:\/\/[^\s]+)?\/(?:public\/)?uploads\/[^\s)]+/gi, '')
+        .replace(/\[(?:Brochure|Video|PDF|Photos?|Images?|Download|Link|Document)\]\([^\)]+\)/gi, '')
         .replace(/###\s*(.*)/g, '*$1*')
         .replace(/##\s*(.*)/g, '*$1*')
         .replace(/#\s*(.*)/g, '*$1*')
         .replace(/\*\*(.*?)\*\*/g, '*$1*')
         .replace(/\\([$#*_~])/g, '$1')
+        .replace(/\n{3,}/g, '\n\n')
         .trim();
 }
 /**
@@ -604,6 +608,16 @@ ${detectedLang === 'english'
       - Always remain polite, helpful, and consultative.`
             : `   * 🪔 STRICT HINDI (DEVANAGARI) INSTRUCTION:
       - The user is communicating in HINDI. You MUST reply 100% in respectful, clear Hindi Devanagari script.`}
+
+5. 🚫 STRICT NO-MEDIA-LINKS DIRECTIVE (EXACT NATIVE ATTACHMENTS ONLY):
+   - Whenever the client asks for photos, images, video walkthrough, master plan layout, or brochure PDF:
+     * The actual native media file (Photos, Video, PDF Document) is dispatched directly to their WhatsApp chat automatically by our system.
+     * ABSOLUTE PROHIBITION: NEVER write or output raw file links, server URLs, download links, or markdown links (NO "http://...", NO ".pdf links", NO ".mp4 links", NO "click here to download", NO "/public/uploads/...")!
+     * Instead, acknowledge naturally:
+       "I have shared the official project brochure PDF right above in this chat 📑", OR
+       "I have sent the HD video walkthrough right above in this chat 🎥", OR
+       "I have shared the site photos right above in this chat 📸".
+     * Only verified Google Maps navigation URLs (for site visit directions) are permitted in text. All other media MUST remain native WhatsApp media attachments for premium user experience.
 
 --------------------------------------------------
 🛡️ OBJECTION HANDLING & SALES CLOSING MATRIX:
@@ -840,26 +854,26 @@ INSTRUCTION FOR AI: Warmly welcome their visit interest. Consultatively ask whet
             if (images.length > 0) {
                 for (let i = 0; i < Math.min(images.length, 3); i++) {
                     const caption = i === 0 ? `📸 *${projectDoc.name}* • Site & Project Photo` : undefined;
-                    (0, baileysService_1.sendMedia)(phone, images[i], caption, tenantId ? tenantId.toString() : undefined).catch(() => { });
+                    await (0, baileysService_1.sendMedia)(phone, images[i], caption, tenantId ? tenantId.toString() : undefined).catch(err => console.error('[Media] Photo send error:', err?.message || err));
                 }
-                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched ${Math.min(images.length, 3)} site and project photos of "${projectDoc.name}" to the buyer's WhatsApp.
-INSTRUCTION FOR AI: Dynamically acknowledge that the photos have been sent above, highlight the quality construction/layout, and consultatively ask if they would like to schedule a private site visit to tour the property in person.`;
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched ${Math.min(images.length, 3)} site and project photos of "${projectDoc.name}" directly as native WhatsApp photo attachments above.
+CRITICAL INSTRUCTION FOR AI: Dynamically acknowledge that the photos have been sent directly above in this chat. DO NOT print, provide, or write any image links or URLs! Highlight the quality construction/layout, and consultatively ask if they would like to schedule a private site visit to tour the property in person.`;
             }
             else {
                 mediaNote = `NOTE: The buyer requested photos of "${projectDoc.name}", but new site photos are being prepared by the site team.
-INSTRUCTION FOR AI: Politely reassure the buyer that our team will share the updated photo gallery directly on WhatsApp shortly, and invite them to schedule a personal site visit in the meantime.`;
+INSTRUCTION FOR AI: Politely reassure the buyer that our team will share the updated photo gallery directly on WhatsApp shortly. DO NOT output any image links or broken URLs, and invite them to schedule a personal site visit in the meantime.`;
             }
         }
         else if (mediaReq === 'videos') {
             const videos = Array.isArray(projectDoc.videos) ? projectDoc.videos.filter(Boolean) : [];
             if (videos.length > 0) {
-                (0, baileysService_1.sendMedia)(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`, tenantId ? tenantId.toString() : undefined).catch(() => { });
-                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the video walkthrough for "${projectDoc.name}" to their WhatsApp.
-INSTRUCTION FOR AI: Dynamically mention the video walkthrough sent above and consultatively ask if they would like to schedule a private site visit to see the project live.`;
+                await (0, baileysService_1.sendMedia)(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`, tenantId ? tenantId.toString() : undefined).catch(err => console.error('[Media] Video send error:', err?.message || err));
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the video walkthrough file for "${projectDoc.name}" directly to their WhatsApp as a native video attachment above.
+CRITICAL INSTRUCTION FOR AI: Dynamically mention that the video walkthrough has been delivered right above in this chat. DO NOT print, output, or send any video URLs, YouTube links, or download links! Consultatively ask if they would like to schedule a private site visit to see the project live.`;
             }
             else {
-                mediaNote = `NOTE: The buyer requested a video walkthrough for "${projectDoc.name}".
-INSTRUCTION FOR AI: Inform them politely that our team will share the video walkthrough link shortly on WhatsApp, and ask if they would like to plan a personal site tour.`;
+                mediaNote = `NOTE: The buyer requested a video walkthrough for "${projectDoc.name}", but the walkthrough video is currently being updated.
+INSTRUCTION FOR AI: Inform them politely that our team will send the video walkthrough directly on WhatsApp shortly. DO NOT write or provide any video links or URLs.`;
             }
         }
         else if (mediaReq === 'map' || mediaReq === 'location') {
@@ -867,10 +881,10 @@ INSTRUCTION FOR AI: Inform them politely that our team will share the video walk
             if (projectDoc.map && projectDoc.map.trim()) {
                 const isUrlLink = projectDoc.map.startsWith('http') && (projectDoc.map.includes('maps.google') || projectDoc.map.includes('goo.gl') || projectDoc.map.includes('maps.app'));
                 if (!isUrlLink) {
-                    (0, baileysService_1.sendMedia)(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`, tenantId ? tenantId.toString() : undefined).catch(() => { });
+                    await (0, baileysService_1.sendMedia)(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`, tenantId ? tenantId.toString() : undefined).catch(err => console.error('[Media] Map send error:', err?.message || err));
                 }
-                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the location & layout map for "${projectDoc.name}". Exact location is "${projectDoc.location || 'prime area'}" with Google Maps link: ${mapsSearchUrl}.
-INSTRUCTION FOR AI: Dynamically acknowledge the location and layout map shared, provide the Google Maps navigation link (${mapsSearchUrl}), and consultatively ask which unit or plot size they would like to explore or if they'd like to plan a site visit.`;
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the layout map file for "${projectDoc.name}" directly to their WhatsApp as an attachment. Exact location is "${projectDoc.location || 'prime area'}" with Google Maps link: ${mapsSearchUrl}.
+INSTRUCTION FOR AI: Dynamically acknowledge the layout map shared above, provide the Google Maps navigation link (${mapsSearchUrl}), and consultatively ask which unit or plot size they would like to explore or if they'd like to plan a site visit.`;
             }
             else {
                 mediaNote = `SYSTEM ACTION COMPLETED: Project location is at "${projectDoc.location || 'prime area'}" with Google Maps link: ${mapsSearchUrl}.
@@ -879,13 +893,13 @@ INSTRUCTION FOR AI: Clearly provide the exact location address and the Google Ma
         }
         else if (mediaReq === 'brochure') {
             if (projectDoc.brochure && projectDoc.brochure.trim()) {
-                (0, baileysService_1.sendMedia)(phone, projectDoc.brochure.trim(), `📑 *${projectDoc.name}* • Official Project Brochure`, tenantId ? tenantId.toString() : undefined).catch(() => { });
-                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the official project brochure PDF for "${projectDoc.name}" to their WhatsApp.
-INSTRUCTION FOR AI: Dynamically mention that the official brochure has been shared above. Highlight the project's standout features and consultatively invite them to schedule a personal site visit.`;
+                await (0, baileysService_1.sendMedia)(phone, projectDoc.brochure.trim(), `📑 *${projectDoc.name}* • Official Project Brochure`, tenantId ? tenantId.toString() : undefined).catch(err => console.error('[Media] Brochure send error:', err?.message || err));
+                mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the official project brochure PDF for "${projectDoc.name}" directly to their WhatsApp as a native PDF document attachment.
+CRITICAL INSTRUCTION FOR AI: Dynamically mention that the official brochure PDF has been sent directly above in this chat. DO NOT print, provide, or write any brochure download links, file URLs, or markdown links! Highlight the project's standout features and consultatively invite them to schedule a personal site visit.`;
             }
             else {
-                mediaNote = `NOTE: The buyer requested the project brochure for "${projectDoc.name}".
-INSTRUCTION FOR AI: Inform them that our team will send the detailed PDF brochure on WhatsApp shortly, and ask which configurations or budget range they are exploring.`;
+                mediaNote = `NOTE: The buyer requested the project brochure for "${projectDoc.name}", but the PDF brochure is currently being updated.
+INSTRUCTION FOR AI: Inform them that our team will send the detailed PDF brochure directly on WhatsApp shortly. DO NOT output or invent any brochure links or URLs.`;
             }
         }
     }

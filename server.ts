@@ -72,7 +72,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   })
 );
-app.options("*", cors({ origin: getCorsOriginDelegate(), credentials: true }));
 
 const staticOptions = {
   dotfiles: "deny" as const,

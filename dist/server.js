@@ -57,7 +57,12 @@ app.use((req, res, next) => {
     next();
 });
 // ✅ Enable CORS before static assets & API routes (Strict Whitelist in Prod)
-app.use((0, cors_1.default)({ origin: (0, security_middleware_1.getCorsOriginDelegate)(), credentials: true }));
+app.use((0, cors_1.default)({
+    origin: (0, security_middleware_1.getCorsOriginDelegate)(),
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+}));
 const staticOptions = {
     dotfiles: "deny",
     maxAge: "1d",
