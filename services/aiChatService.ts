@@ -28,7 +28,48 @@ import { sendMedia } from './baileysService';
 const AI_HISTORY_MESSAGES = parseInt(process.env.AI_HISTORY_MESSAGES || '6', 10);
 const AI_MAX_REPLY_CHARS = parseInt(process.env.AI_MAX_REPLY_CHARS || '600', 10);
 
-// Only explicit requests to speak with a human/agent/manager trigger handoff
+// Only explicit requests to speak with a human/agent/manager or contact number trigger handoff
+export const CONTACT_NUMBER_KEYWORDS = [
+  'contact number',
+  'sales number',
+  'sales team number',
+  'sales contact',
+  'phone number',
+  'mobile number',
+  'calling number',
+  'apna number',
+  'office number',
+  'share number',
+  'send number',
+  'give number',
+  'your number',
+  'helpline',
+  'support number',
+  'contact details',
+  'connect number',
+  'number do',
+  'number de do',
+  'number dena',
+  'number batao',
+  'number share',
+  'kis number',
+  'kisko call',
+  'how to call',
+  'where to call',
+  'call on which',
+  'कॉलिंग नंबर',
+  'कांटेक्ट नंबर',
+  'नंबर दो',
+  'नंबर बताओ',
+  'फोन नंबर',
+];
+
+export function isContactNumberRequest(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return CONTACT_NUMBER_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 const HANDOFF_KEYWORDS = [
   'agent',
   'human',
@@ -54,12 +95,103 @@ const HANDOFF_KEYWORDS = [
   'contact number',
   'insan se baat',
   'calling',
+  'sales number',
+  'sales team number',
+  'sales contact',
+  'office number',
+  'apna number',
+  'number do',
+  'number de do',
+  'number dena',
+  'number batao',
+  'number share',
+  'share number',
+  'send number',
+  'give number',
+  'your number',
+  'helpline',
+  'phone number',
+  'mobile number',
+  'बात करनी',
+  'कॉल करो',
+  'फोन करो',
+  'कॉल कीजिए',
+  'एजेंट',
+  'नंबर दो',
 ];
 
 export function isHandoffRequested(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
   return HANDOFF_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+/**
+ * Resolves the official sales contact phone for a tenant.
+ * Priority:
+ * 1. Connected WhatsApp session phoneNumber (Baileys)
+ * 2. Tenant.whatsappConfig.phoneNumber
+ * 3. Tenant.phone (business phone)
+ * 4. Master Tenant's connected WhatsApp or business phone
+ * 5. Environment fallback (SUPPORT_PHONE / WHATSAPP_PHONE)
+ */
+export async function getSalesContactPhone(tenantId?: any): Promise<string> {
+  try {
+    const tid = tenantId ? tenantId.toString() : 'master';
+    const { getConnectionStatus } = await import('./baileysService');
+    const status = getConnectionStatus(tid);
+    if (status?.phoneNumber && status.phoneNumber.replace(/\D/g, '').length >= 10) {
+      return status.phoneNumber;
+    }
+
+    const Tenant = (await import('../models/tenant.model')).default;
+    if (tenantId) {
+      const tenant = await Tenant.findById(tenantId).select('phone whatsappConfig').lean();
+      if (tenant?.whatsappConfig?.phoneNumber && tenant.whatsappConfig.phoneNumber.replace(/\D/g, '').length >= 10) {
+        return tenant.whatsappConfig.phoneNumber;
+      }
+      if (tenant?.phone && tenant.phone.replace(/\D/g, '').length >= 10) {
+        return tenant.phone;
+      }
+    }
+
+    // Fallback to master tenant
+    const master = await Tenant.findOne({ isMaster: true }).select('phone whatsappConfig').lean();
+    if (master?.whatsappConfig?.phoneNumber && master.whatsappConfig.phoneNumber.replace(/\D/g, '').length >= 10) {
+      return master.whatsappConfig.phoneNumber;
+    }
+    if (master?.phone && master.phone.replace(/\D/g, '').length >= 10) {
+      return master.phone;
+    }
+
+    const Admin = (await import('../models/admin.model')).default;
+    const admin = await Admin.findOne({ role: 'super_admin' }).select('phone').lean();
+    if (admin?.phone && admin.phone.replace(/\D/g, '').length >= 10) {
+      return admin.phone;
+    }
+  } catch (err: any) {
+    console.error('[SalesPhone] Error resolving sales contact phone:', err?.message || err);
+  }
+  return process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '+91 99999 99999';
+}
+
+export function formatDisplayPhone(rawPhone: string): string {
+  if (!rawPhone) return '';
+  let digits = rawPhone.replace(/\D/g, '');
+  if (digits.startsWith('0') && digits.length === 11) {
+    digits = digits.slice(1);
+  }
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    const main = digits.slice(2);
+    return `+91 ${main.slice(0, 5)} ${main.slice(5)}`;
+  }
+  if (digits.length > 5) {
+    return `+${digits}`;
+  }
+  return rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`;
 }
 
 export function isSiteVisitIntent(text: string): boolean {
@@ -318,22 +450,47 @@ export async function buildMessages(
   contextNote?: string,
   enforcedLang?: DetectedLanguage
 ): Promise<LLMMessage[]> {
-  // Fetch lead document first to get accurate phone reference
+  // Fetch lead document first to get accurate phone reference and tenant context
   const leadDoc = await Lead.findById(leadId).lean();
-  const historyQuery = leadDoc?.phone
+  const tenantId = leadDoc?.tenantId || null;
+
+  let agencyName = 'our Real Estate Advisory Team';
+  if (tenantId) {
+    const Tenant = (await import('../models/tenant.model')).default;
+    const t = await Tenant.findById(tenantId).select('name').lean();
+    if (t?.name) agencyName = t.name;
+  } else {
+    const Tenant = (await import('../models/tenant.model')).default;
+    const master = await Tenant.findOne({ isMaster: true }).select('name').lean();
+    agencyName = master?.name || 'Bhole Baba Investments';
+  }
+
+  const historyQuery: any = leadDoc?.phone
     ? { $or: [{ leadId }, { phone: leadDoc.phone }] }
     : { leadId };
+  if (tenantId) {
+    historyQuery.tenantId = tenantId;
+  }
+
+  const convStateQuery: any = { $or: [{ leadId }, ...(leadDoc?.phone ? [{ phone: leadDoc.phone }] : [])] };
+  if (tenantId) {
+    convStateQuery.tenantId = tenantId;
+  }
 
   // Fetch recent conversation history, state, and project facts in parallel
-  const [projectFacts, dynamicPortfolio, convState, historyDocs] = await Promise.all([
+  const [salesPhone, projectFacts, dynamicPortfolio, convState, historyDocs] = await Promise.all([
+    getSalesContactPhone(tenantId),
     getProjectFacts(projectId, currentMessage),
-    getDynamicPortfolioCatalogue(projectId),
-    ConversationState.findOne({ $or: [{ leadId }, ...(leadDoc?.phone ? [{ phone: leadDoc.phone }] : [])] }).select('preferredLanguage').lean(),
+    getDynamicPortfolioCatalogue(projectId, tenantId),
+    ConversationState.findOne(convStateQuery).select('preferredLanguage').lean(),
     ConversationMessage.find(historyQuery)
       .sort({ createdAt: -1 })
       .limit(AI_HISTORY_MESSAGES)
       .lean(),
   ]);
+
+  const formattedSalesPhone = formatDisplayPhone(salesPhone);
+  const displayLeadPhone = (leadDoc?.phone || '').replace(/\D/g, '').slice(-10);
 
   historyDocs.reverse();
 
@@ -366,8 +523,6 @@ export async function buildMessages(
     detectedLang = 'english';
   } else if (enforcedLang) {
     detectedLang = enforcedLang;
-  } else if (convState?.preferredLanguage) {
-    detectedLang = convState.preferredLanguage as DetectedLanguage;
   } else {
     detectedLang = detectLanguage(currentMessage, {
       history: sanitizedHistory,
@@ -401,8 +556,20 @@ export async function buildMessages(
       : '';
 
   const systemPrompt = `You are an elite, consultative Senior Real Estate Property Advisor assisting home buyers on WhatsApp.
-You represent our real estate firm "Bhole Baba Investments".
+You represent our real estate firm "${agencyName}".
 Your mission is to provide deeply satisfying, accurate, consultative, and direct answers just like ChatGPT/OpenAI, strictly grounded in the database facts provided below.
+
+🔒 STRICT FIRM BOUNDARY & TENANT ISOLATION:
+- You work exclusively for "${agencyName}".
+- Under NO circumstance should you ever mention, recommend, or leak details about any real estate firm or property not explicitly listed in PRIMARY PROPERTY or OUR OTHER ACTIVE PROJECTS below.
+- If the buyer asks about any other firm, agency, or external property, state that you represent "${agencyName}" and offer assistance with our verified projects.
+
+📞 OFFICIAL SALES TEAM & ADVISORY CONTACT:
+- Official Sales Team Helpline / Direct Phone: ${formattedSalesPhone}
+- Connected WhatsApp Channel: This official WhatsApp chat (${formattedSalesPhone})
+- CRITICAL RULES REGARDING CONTACT NUMBERS:
+  1. Whenever the client asks for our contact number, sales team number, calling number, office phone, or asks how to call or reach us, ALWAYS provide our official sales team phone number: ${formattedSalesPhone}.
+  2. ABSOLUTE PROHIBITION: NEVER quote or give the client's own phone number as our sales team or office number! The client's registered phone number (${displayLeadPhone || 'buyer phone'}) belongs strictly to the client, NOT to our sales team.
 
 --------------------------------------------------
 🎯 CORE BEHAVIOR & CONVERSATIONAL FLOW RULES:
@@ -421,8 +588,8 @@ Your mission is to provide deeply satisfying, accurate, consultative, and direct
    - Bombarding buyers with multiple questions (e.g. asking budget, BHK, and timeline all at once) overwhelms them and destroys response rates.
    - Choose the single most relevant next consultative question to guide the conversation forward.
 
-4. 🔒 MANDATORY STRICT LANGUAGE POLICY (ZERO TOLERANCE FOR FLIPPING):
-   - Current Locked Language Mode: [ *** ${detectedLang.toUpperCase()} *** ]
+4. 🔒 MANDATORY LANGUAGE POLICY (DYNAMIC SENTENCE ADAPTATION):
+   - Current Reply Language: [ *** ${detectedLang.toUpperCase()} *** ]
 ${
   detectedLang === 'english'
     ? `   * 🇬🇧 STRICT PROFESSIONAL ENGLISH INSTRUCTION:
@@ -430,12 +597,11 @@ ${
       - NEVER use Hindi or Hinglish words (NO "ji", "haan", "bhai", "aap", "karein", "hain", etc.).
       - Maintain the standard of a premier international property advisory consultant.`
     : detectedLang === 'hinglish'
-    ? `   * 🇮🇳 STRICT HINGLISH INSTRUCTION:
-      - The user has chosen to communicate in HINGLISH. You MUST reply 100% in warm, natural everyday HINGLISH (Roman Hindi with English alphabet, e.g. "Ji haan, project prime location par situated hai aur 24/7 security ke sath aata hai...").
-      - NEVER, UNDER ANY CIRCUMSTANCES, REPLY IN FULL ENGLISH!
-      - Even if the user says short English words or loanwords like "ok", "yes", "sure", "location", "send location", "price", "brochure", "site visit", or "call me", you MUST REMAIN 100% IN HINGLISH!
-      - Translate all database facts (even if provided in English below) into natural, respectful Hinglish.
-      - Example Hinglish tone: "Yeh project prime location par situated hai aur yahan 24/7 security, clubhouse aur swimming pool jaisi top amenities milti hain. Kya hum is weekend par aapka site visit plan karein?"`
+    ? `   * 🇮🇳 RESPECTFUL HINGLISH INSTRUCTION:
+      - The user has explicitly asked a full sentence or distinct query in HINGLISH.
+      - Reply in warm, natural, respectful Hinglish using the English/Roman alphabet (e.g. "Yeh project prime location Sector 150 par situated hai aur yahan 24/7 security, clubhouse aur swimming pool jaisi top amenities milti hain...").
+      - Keep technical property terminology in English (e.g., "site visit", "clubhouse", "swimming pool", "floor plan", "down payment", "brochure").
+      - Always remain polite, helpful, and consultative.`
     : `   * 🪔 STRICT HINDI (DEVANAGARI) INSTRUCTION:
       - The user is communicating in HINDI. You MUST reply 100% in respectful, clear Hindi Devanagari script.`
 }
@@ -478,7 +644,7 @@ ${
 --------------------------------------------------
 🚫 NO ROBOTIC REPETITION OR SCRIPT LOOPS:
 --------------------------------------------------
-- Do NOT introduce the firm name "Bhole Baba Investments" in every single message. Mention it naturally on the first greeting or when asked.
+- Do NOT introduce the firm name "${agencyName}" in every single message. Mention it naturally on the first greeting or when asked.
 - Do NOT keep asking the exact same closing question (e.g., "Are you looking for self-use or investment?") on every turn if it was already asked or answered in the chat history.
 - Guide the customer forward naturally (e.g. offering a walkthrough video, layout map, or scheduling a site visit for Saturday or Sunday).
 
@@ -533,10 +699,25 @@ export async function generateReply(
   projectId: Types.ObjectId,
   contextNote?: string
 ): Promise<{ reply: string; needsAgent: boolean; aiPaused: boolean }> {
-  // 1. Retrieve conversation history & state to ensure strict language continuity
+  // 1. Retrieve conversation history & state to ensure strict language continuity and firm isolation
+  const tenantId = lead.tenantId || null;
+  let agencyName = 'our Real Estate Advisory Team';
+  if (tenantId) {
+    const Tenant = (await import('../models/tenant.model')).default;
+    const t = await Tenant.findById(tenantId).select('name').lean();
+    if (t?.name) agencyName = t.name;
+  } else {
+    const Tenant = (await import('../models/tenant.model')).default;
+    const master = await Tenant.findOne({ isMaster: true }).select('name').lean();
+    agencyName = master?.name || 'Bhole Baba Investments';
+  }
+
+  const convFilter: any = { $or: [{ leadId: lead._id }, { phone }] };
+  if (tenantId) convFilter.tenantId = tenantId;
+
   const [convState, recentMessages] = await Promise.all([
-    ConversationState.findOne({ $or: [{ leadId: lead._id }, { phone }] }).select('preferredLanguage').lean(),
-    ConversationMessage.find({ $or: [{ leadId: lead._id }, { phone }] }).sort({ createdAt: -1 }).limit(10).lean(),
+    ConversationState.findOne(convFilter).select('preferredLanguage').lean(),
+    ConversationMessage.find(convFilter).sort({ createdAt: -1 }).limit(10).lean(),
   ]);
 
   // Determine if the assistant has EVER replied before in this conversation
@@ -584,7 +765,7 @@ export async function generateReply(
   if (/\[Shared (?:Live )?Location:/i.test(text)) {
     detectedIntent = 'shared_location';
     sharedLocationNote = `USER ACTION COMPLETED: The customer has shared their pinned or live location on WhatsApp (${text}).
-INSTRUCTION FOR AI: Thank the customer warmly for sharing their location. Let them know our property advisory team at Bhole Baba Investments has received it. Clearly explain the route and accessibility to our project "${projectDoc?.name || 'our project'}" located at "${projectDoc?.location || 'our site'}", and consultatively offer to schedule a private site visit this weekend. Keep your response strictly grounded in [ ${lang.toUpperCase()} ].`;
+INSTRUCTION FOR AI: Thank the customer warmly for sharing their location. Let them know our property advisory team at ${agencyName} has received it. Clearly explain the route and accessibility to our project "${projectDoc?.name || 'our project'}" located at "${projectDoc?.location || 'our site'}", and consultatively offer to schedule a private site visit this weekend. Keep your response strictly grounded in [ ${lang.toUpperCase()} ].`;
   }
 
   // ── A. SITE VISIT DETECTION & ENGINE ──
@@ -614,16 +795,28 @@ INSTRUCTION FOR AI: Thank the customer warmly for sharing their location. Let th
 
       // Google Calendar Integration (Background)
       try {
-        const Admin = (await import('../models/admin.model')).default;
-        const { createCalendarEvent } = await import('./googleCalendar.service');
-        const admin = await Admin.findOne({
-          'googleCalendar.isConnected': true,
-          'googleCalendar.refreshToken': { $exists: true, $ne: '' },
-        });
+        let refreshToken: string | null = null;
+        if (lead.tenantId) {
+          const Tenant = (await import('../models/tenant.model')).default;
+          const tenant = await Tenant.findById(lead.tenantId).lean();
+          if (tenant?.googleConfig?.isConnected && tenant.googleConfig?.refreshToken) {
+            refreshToken = tenant.googleConfig.refreshToken;
+          }
+        }
 
-        if (admin?.googleCalendar?.refreshToken) {
+        if (!refreshToken) {
+          const Admin = (await import('../models/admin.model')).default;
+          const admin = await Admin.findOne({
+            'googleCalendar.isConnected': true,
+            'googleCalendar.refreshToken': { $exists: true, $ne: '' },
+          });
+          refreshToken = admin?.googleCalendar?.refreshToken || null;
+        }
+
+        if (refreshToken) {
+          const { createCalendarEvent } = await import('./googleCalendar.service');
           const updatedLead = await Lead.findById(lead._id);
-          const calEvent = await createCalendarEvent(admin.googleCalendar.refreshToken, updatedLead);
+          const calEvent = await createCalendarEvent(refreshToken, updatedLead);
           if (calEvent?.id) {
             await Lead.findByIdAndUpdate(lead._id, { $set: { 'followUp.googleEventId': calEvent.id } });
           }
@@ -669,7 +862,7 @@ INSTRUCTION FOR AI: Warmly welcome their visit interest. Consultatively ask whet
       if (images.length > 0) {
         for (let i = 0; i < Math.min(images.length, 3); i++) {
           const caption = i === 0 ? `📸 *${projectDoc.name}* • Site & Project Photo` : undefined;
-          sendMedia(phone, images[i], caption).catch(() => {});
+          sendMedia(phone, images[i], caption, tenantId ? tenantId.toString() : undefined).catch(() => {});
         }
         mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched ${Math.min(images.length, 3)} site and project photos of "${projectDoc.name}" to the buyer's WhatsApp.
 INSTRUCTION FOR AI: Dynamically acknowledge that the photos have been sent above, highlight the quality construction/layout, and consultatively ask if they would like to schedule a private site visit to tour the property in person.`;
@@ -680,7 +873,7 @@ INSTRUCTION FOR AI: Politely reassure the buyer that our team will share the upd
     } else if (mediaReq === 'videos') {
       const videos: string[] = Array.isArray(projectDoc.videos) ? projectDoc.videos.filter(Boolean) : [];
       if (videos.length > 0) {
-        sendMedia(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`).catch(() => {});
+        sendMedia(phone, videos[0], `🎥 *${projectDoc.name}* • Video Walkthrough`, tenantId ? tenantId.toString() : undefined).catch(() => {});
         mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the video walkthrough for "${projectDoc.name}" to their WhatsApp.
 INSTRUCTION FOR AI: Dynamically mention the video walkthrough sent above and consultatively ask if they would like to schedule a private site visit to see the project live.`;
       } else {
@@ -692,7 +885,7 @@ INSTRUCTION FOR AI: Inform them politely that our team will share the video walk
       if (projectDoc.map && projectDoc.map.trim()) {
         const isUrlLink = projectDoc.map.startsWith('http') && (projectDoc.map.includes('maps.google') || projectDoc.map.includes('goo.gl') || projectDoc.map.includes('maps.app'));
         if (!isUrlLink) {
-          sendMedia(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`).catch(() => {});
+          sendMedia(phone, projectDoc.map.trim(), `🗺️ *${projectDoc.name}* • Approved Master Plan & Layout Map`, tenantId ? tenantId.toString() : undefined).catch(() => {});
         }
         mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the location & layout map for "${projectDoc.name}". Exact location is "${projectDoc.location || 'prime area'}" with Google Maps link: ${mapsSearchUrl}.
 INSTRUCTION FOR AI: Dynamically acknowledge the location and layout map shared, provide the Google Maps navigation link (${mapsSearchUrl}), and consultatively ask which unit or plot size they would like to explore or if they'd like to plan a site visit.`;
@@ -702,7 +895,7 @@ INSTRUCTION FOR AI: Clearly provide the exact location address and the Google Ma
       }
     } else if (mediaReq === 'brochure') {
       if (projectDoc.brochure && projectDoc.brochure.trim()) {
-        sendMedia(phone, projectDoc.brochure.trim(), `📑 *${projectDoc.name}* • Official Project Brochure`).catch(() => {});
+        sendMedia(phone, projectDoc.brochure.trim(), `📑 *${projectDoc.name}* • Official Project Brochure`, tenantId ? tenantId.toString() : undefined).catch(() => {});
         mediaNote = `SYSTEM ACTION COMPLETED: We have dispatched the official project brochure PDF for "${projectDoc.name}" to their WhatsApp.
 INSTRUCTION FOR AI: Dynamically mention that the official brochure has been shared above. Highlight the project's standout features and consultatively invite them to schedule a personal site visit.`;
       } else {
@@ -719,9 +912,9 @@ INSTRUCTION FOR AI: Inform them that our team will send the detailed PDF brochur
     aiPaused = false; // Do NOT freeze AI! Keep assistant active so other questions are not silently dropped.
 
     sendSupportAlert({
-      subject: `🚨 Callback Requested: ${currentLead.fullName || 'Lead'}`,
-      badge: '📞 Callback Request',
-      title: 'Lead Requested Immediate Callback',
+      subject: `🚨 Callback/Contact Requested: ${currentLead.fullName || 'Lead'}`,
+      badge: '📞 Contact / Callback',
+      title: 'Lead Requested Contact or Callback',
       lead: currentLead,
       project: projectDoc,
       details: {
@@ -733,40 +926,59 @@ INSTRUCTION FOR AI: Inform them that our team will send the detailed PDF brochur
       ctaText: 'Open Lead & Call Customer →',
     }).catch(err => console.error('[Handoff] Support alert warning:', err?.message || err));
 
-    const displayPhone = (currentLead.phone || phone || '').replace(/\D/g, '').slice(-10);
+    const salesPhone = await getSalesContactPhone(tenantId);
+    const formattedSalesPhone = formatDisplayPhone(salesPhone);
+    const displayLeadPhone = (currentLead.phone || phone || '').replace(/\D/g, '').slice(-10);
+    const isDirectNumberQuery = isContactNumberRequest(text);
 
     let callbackReply = '';
-    if (lang === 'english') {
-      callbackReply = `Certainly! I have registered your callback request with our Senior Property Advisor at *Bhole Baba Investments*.
+    if (isDirectNumberQuery) {
+      if (lang === 'english') {
+        callbackReply = `Certainly! You can connect with our Sales & Property Advisory Team directly at *${formattedSalesPhone}* (or continue chatting right here on this WhatsApp number).
 
-📞 Our advisor will call you shortly on your registered number${displayPhone ? ` (${displayPhone})` : ''}.
+Our Senior Advisor at *${agencyName}* is also available to assist you with complete details, brochures, and private site visits. Feel free to ask any questions! 🏡`;
+      } else if (lang === 'hindi') {
+        callbackReply = `जी बिल्कुल! आप हमारी सेल्स और प्रॉपर्टी एडवाइजरी टीम से सीधे *${formattedSalesPhone}* पर संपर्क कर सकते हैं (या इसी व्हाट्सएप नंबर पर चैट जारी रख सकते हैं)।
 
-In the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
-    } else if (lang === 'hindi') {
-      callbackReply = `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *भोले बाबा इन्वेस्टमेंट्स* के सीनियर एडवाइजर को भेज दिया है।
+*${agencyName}* के हमारे सीनियर एडवाइजर प्रोजेक्ट डिटेल्स और साइट विजिट के लिए भी उपलब्ध हैं। आप बेझिझक कोई भी सवाल पूछ सकते हैं! 🏡`;
+      } else {
+        callbackReply = `Ji bilkul! Aap hamari Sales & Advisory Team se directly *${formattedSalesPhone}* par call ya WhatsApp par connect kar sakte hain (ya isi chat par baat continue kar sakte hain).
 
-📞 हमारे एडवाइजर जल्द ही आपके नंबर${displayPhone ? ` (${displayPhone})` : ''} पर कॉल करेंगे।
-
-इस दौरान यदि आपका प्रोजेक्ट, कीमत या लोकेशन से संबंधित कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
+*${agencyName}* ke hamare Senior Property Advisor complete project details, brochures aur site visit ke liye available hain. Aap pricing ya layout ko lekar koi bhi sawaal yahan puch sakte hain! 🏡`;
+      }
     } else {
-      callbackReply = `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*Bhole Baba Investments*) ko forward kar diya hai.
+      if (lang === 'english') {
+        callbackReply = `Certainly! I have registered your callback request with our Senior Property Advisor at *${agencyName}*.
 
-📞 Hamare advisor jald hi aapse aapke number${displayPhone ? ` (${displayPhone})` : ''} par call par connect karenge.
+📞 Our advisor will call you shortly on your registered number${displayLeadPhone ? ` (${displayLeadPhone})` : ''}.
 
-Is dauran agar aapka pricing, location ya flat layouts ko lekar koi bhi sawaal ho, toh aap yahan freely puch sakte hain! 🏡`;
+You can also reach our Sales Team directly at *${formattedSalesPhone}* (or message us here anytime). In the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
+      } else if (lang === 'hindi') {
+        callbackReply = `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *${agencyName}* के सीनियर एडवाइजर को भेज दिया है।
+
+📞 हमारे एडवाइजर जल्द ही आपके नंबर${displayLeadPhone ? ` (${displayLeadPhone})` : ''} पर कॉल करेंगे।
+
+आप सीधे हमारी सेल्स टीम से *${formattedSalesPhone}* पर भी संपर्क कर सकते हैं। इस दौरान यदि आपका कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
+      } else {
+        callbackReply = `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*${agencyName}*) ko forward kar diya hai.
+
+📞 Hamare advisor jald hi aapse aapke number${displayLeadPhone ? ` (${displayLeadPhone})` : ''} par call par connect karenge.
+
+Aap hamari Sales Team se directly *${formattedSalesPhone}* par bhi connect kar sakte hain. Is dauran agar aapka pricing ya flat layouts ko lekar koi bhi sawaal ho, toh aap freely puch sakte hain! 🏡`;
+      }
     }
 
-    // Persist conversation message
+    // Persist conversation message with strict tenant isolation
     await ConversationMessage.create([
-      { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-      { leadId: lead._id, phone, role: 'assistant', content: callbackReply, createdAt: new Date() },
+      { tenantId: tenantId || null, leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+      { tenantId: tenantId || null, leadId: lead._id, phone, role: 'assistant', content: callbackReply, createdAt: new Date() },
     ]);
 
     // Persist conversation state with needsAgent: true, aiPaused: false
     await ConversationState.findOneAndUpdate(
-      { $or: [{ phone }, { leadId: lead._id }] },
+      tenantId ? { tenantId, $or: [{ phone }, { leadId: lead._id }] } : { $or: [{ phone }, { leadId: lead._id }] },
       {
-        $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
+        $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date(), tenantId: tenantId || null },
         $set: {
           phone,
           lastMessageFromUser: text,
@@ -790,7 +1002,7 @@ Is dauran agar aapka pricing, location ya flat layouts ko lekar koi bhi sawaal h
       language: lang,
       detectedIntent,
       projectId: targetProjectId,
-      projectName: projectDoc?.name || 'Bhole Baba Investments',
+      projectName: projectDoc?.name || agencyName,
       userMessage: text,
       aiResponse: callbackReply,
       source: 'whatsapp',
@@ -800,9 +1012,9 @@ Is dauran agar aapka pricing, location ya flat layouts ko lekar koi bhi sawaal h
   }
 
   // ── D. PROJECT SELECTION MATCHING ──
-  let activeProjects = await Project.find({ isActive: true }).lean();
+  let activeProjects = await Project.find(tenantId ? { tenantId, isActive: true } : { isActive: true }).lean();
   if (activeProjects.length === 0) {
-    activeProjects = await Project.find().lean();
+    activeProjects = await Project.find(tenantId ? { tenantId } : {}).lean();
   }
   targetProjectId = targetProjectId || projectId;
 
@@ -866,14 +1078,14 @@ Conclude with a warm consultative question asking if they would like to schedule
     if (isBareGreeting && isFirstTurn && dynamicGreeting && dynamicGreeting.trim()) {
       const cleanReply = dynamicGreeting.trim();
       await ConversationMessage.create([
-        { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-        { leadId: lead._id, phone, role: 'assistant', content: cleanReply, createdAt: new Date() },
+        { tenantId: tenantId || null, leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+        { tenantId: tenantId || null, leadId: lead._id, phone, role: 'assistant', content: cleanReply, createdAt: new Date() },
       ]);
 
       await ConversationState.findOneAndUpdate(
-        { $or: [{ phone }, { leadId: lead._id }] },
+        tenantId ? { tenantId, $or: [{ phone }, { leadId: lead._id }] } : { $or: [{ phone }, { leadId: lead._id }] },
         {
-          $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
+          $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date(), tenantId: tenantId || null },
           $set: {
             phone,
             lastMessageFromUser: text,
@@ -897,7 +1109,7 @@ ADMIN CONFIGURED FIRST WELCOME MESSAGE (FROM DATABASE): "${dynamicGreeting.trim(
 INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POLISHED, PROFESSIONAL ENGLISH (No Hinglish or Hindi words). Deliver or warmly incorporate this exact admin-configured greeting into your response and ask how you can assist them today with our projects, pricing, location, or scheduling a site visit.`;
     } else {
       greetingNote = `USER GREETING / INITIAL CONTACT: The user sent an opening greeting ("${text}").
-INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POLISHED, PROFESSIONAL ENGLISH (No Hinglish or Hindi words). Warmly welcome them to Bhole Baba Investments, introduce yourself as their Senior Property Advisor, and consultatively ask how you can assist them today (exploring projects, latest pricing, location, available plot/flat sizes, or scheduling a site visit).`;
+INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POLISHED, PROFESSIONAL ENGLISH (No Hinglish or Hindi words). Warmly welcome them to ${agencyName}, introduce yourself as their Senior Property Advisor, and consultatively ask how you can assist them today (exploring projects, latest pricing, location, available plot/flat sizes, or scheduling a site visit).`;
     }
   }
 
@@ -913,7 +1125,7 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
   const statedBudget = currentLead.whatIsYourBudget || text;
   const isAskingCheaper = /sasta|saste|budget kam|lower budget|affordable|cheap|less price|kam rate/i.test(text);
   if (statedBudget || isAskingCheaper) {
-    const crossProj = await findCrossSellProject(targetProjectId, statedBudget);
+    const crossProj = await findCrossSellProject(targetProjectId, statedBudget, tenantId);
     if (crossProj) {
       crossSellNote = `CROSS-SELLING RECOMMENDATION: The buyer asked for affordable / lower budget options. Introduce "${crossProj.name}" at "${crossProj.location}" (starting from ${crossProj.priceRange}) as an ideal match, highlighting why it offers outstanding value.`;
     }
@@ -935,7 +1147,7 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
   const fullContextNote = contextParts.join('\n\n');
 
   // ── 6. DYNAMIC AI GENERATION GROUNDED IN DATABASE FACTS ──
-  const smartFallback = buildIntelligentRealEstateResponse(projectDoc, text, lang, activeProjects);
+  const smartFallback = buildIntelligentRealEstateResponse(projectDoc, text, lang, activeProjects, agencyName);
   const messages = await buildMessages(lead._id, targetProjectId, text, fullContextNote, lang);
 
   const rawReply = await askLLMSafe(messages, smartFallback);
@@ -946,10 +1158,10 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
     reply = reply.slice(0, AI_MAX_REPLY_CHARS - 3).trim() + '...';
   }
 
-  // ── 7. PERSIST CONVERSATION & STATE ──
+  // ── 7. PERSIST CONVERSATION & STATE (TENANT ISOLATED) ──
   await ConversationMessage.create([
-    { leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
-    { leadId: lead._id, phone, role: 'assistant', content: reply, createdAt: new Date() },
+    { tenantId: tenantId || null, leadId: lead._id, phone, role: 'user', content: text, createdAt: new Date() },
+    { tenantId: tenantId || null, leadId: lead._id, phone, role: 'assistant', content: reply, createdAt: new Date() },
   ]);
 
   const stateUpdates: Record<string, any> = {
@@ -967,9 +1179,9 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
   }
 
   await ConversationState.findOneAndUpdate(
-    { $or: [{ phone }, { leadId: lead._id }] },
+    tenantId ? { tenantId, $or: [{ phone }, { leadId: lead._id }] } : { $or: [{ phone }, { leadId: lead._id }] },
     {
-      $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date() },
+      $setOnInsert: { currentStep: 'AI_CHAT', startedAt: new Date(), tenantId: tenantId || null },
       $set: { ...stateUpdates, phone },
       $inc: { attemptCount: 1 },
     },
@@ -985,7 +1197,7 @@ INSTRUCTION FOR AI: The FIRST message to the customer MUST ALWAYS BE IN 100% POL
     language: lang,
     detectedIntent,
     projectId: targetProjectId,
-    projectName: projectDoc?.name || 'Bhole Baba Investments',
+    projectName: projectDoc?.name || agencyName,
     userMessage: text,
     aiResponse: reply,
     source: 'whatsapp',
