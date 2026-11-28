@@ -127,52 +127,17 @@ export function isHandoffRequested(text: string): boolean {
 }
 
 /**
- * Resolves the official sales contact phone for a tenant.
+ * Resolves the official advisory team contact phone.
  * Priority:
- * 1. Connected WhatsApp session phoneNumber (Baileys)
- * 2. Tenant.whatsappConfig.phoneNumber
- * 3. Tenant.phone (business phone)
- * 4. Master Tenant's connected WhatsApp or business phone
- * 5. Environment fallback (SUPPORT_PHONE / WHATSAPP_PHONE)
+ * 1. Environment main advisory number (SUPPORT_PHONE / WHATSAPP_PHONE)
+ * 2. Hardcoded main advisory number fallback (+91 98558 69999)
  */
-export async function getSalesContactPhone(tenantId?: any): Promise<string> {
-  try {
-    const tid = tenantId ? tenantId.toString() : 'master';
-    const { getConnectionStatus } = await import('./baileysService');
-    const status = getConnectionStatus(tid);
-    if (status?.phoneNumber && status.phoneNumber.replace(/\D/g, '').length >= 10) {
-      return status.phoneNumber;
-    }
-
-    const Tenant = (await import('../models/tenant.model')).default;
-    if (tenantId) {
-      const tenant = await Tenant.findById(tenantId).select('phone whatsappConfig').lean();
-      if (tenant?.whatsappConfig?.phoneNumber && tenant.whatsappConfig.phoneNumber.replace(/\D/g, '').length >= 10) {
-        return tenant.whatsappConfig.phoneNumber;
-      }
-      if (tenant?.phone && tenant.phone.replace(/\D/g, '').length >= 10) {
-        return tenant.phone;
-      }
-    }
-
-    // Fallback to master tenant
-    const master = await Tenant.findOne({ isMaster: true }).select('phone whatsappConfig').lean();
-    if (master?.whatsappConfig?.phoneNumber && master.whatsappConfig.phoneNumber.replace(/\D/g, '').length >= 10) {
-      return master.whatsappConfig.phoneNumber;
-    }
-    if (master?.phone && master.phone.replace(/\D/g, '').length >= 10) {
-      return master.phone;
-    }
-
-    const Admin = (await import('../models/admin.model')).default;
-    const admin = await Admin.findOne({ role: 'super_admin' }).select('phone').lean();
-    if (admin?.phone && admin.phone.replace(/\D/g, '').length >= 10) {
-      return admin.phone;
-    }
-  } catch (err: any) {
-    console.error('[SalesPhone] Error resolving sales contact phone:', err?.message || err);
+export async function getSalesContactPhone(_tenantId?: any): Promise<string> {
+  const mainAdvisoryPhone = (process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '').trim();
+  if (mainAdvisoryPhone && mainAdvisoryPhone.replace(/\D/g, '').length >= 10) {
+    return mainAdvisoryPhone;
   }
-  return process.env.SUPPORT_PHONE || process.env.WHATSAPP_PHONE || '+91 98558 69999';
+  return '+91 98558 69999';
 }
 
 export function formatDisplayPhone(rawPhone: string): string {
@@ -494,7 +459,6 @@ export async function buildMessages(
   ]);
 
   const formattedSalesPhone = formatDisplayPhone(salesPhone);
-  const displayLeadPhone = (leadDoc?.phone || '').replace(/\D/g, '').slice(-10);
 
   historyDocs.reverse();
 
@@ -569,11 +533,10 @@ Your mission is to provide deeply satisfying, accurate, consultative, and direct
 - If the buyer asks about any other firm, agency, or external property, state that you represent "${agencyName}" and offer assistance with our verified projects.
 
 📞 OFFICIAL SALES TEAM & ADVISORY CONTACT:
-- Official Sales Team Helpline / Direct Phone: ${formattedSalesPhone}
-- Connected WhatsApp Channel: This official WhatsApp chat (${formattedSalesPhone})
+- Official Advisory Team Helpline / Direct Phone: ${formattedSalesPhone}
 - CRITICAL RULES REGARDING CONTACT NUMBERS:
-  1. Whenever the client asks for our contact number, sales team number, calling number, office phone, or asks how to call or reach us, ALWAYS provide our official sales team phone number: ${formattedSalesPhone}.
-  2. ABSOLUTE PROHIBITION: NEVER quote or give the client's own phone number as our sales team or office number! The client's registered phone number (${displayLeadPhone || 'buyer phone'}) belongs strictly to the client, NOT to our sales team.
+  1. Whenever the client asks for our contact number, advisory team number, sales team number, calling number, office phone, or asks how to call or reach us, ALWAYS provide ONLY our official advisory team phone number: ${formattedSalesPhone}.
+  2. ABSOLUTE PROHIBITION: NEVER mention, repeat, or quote the client's own phone number or any other phone number in your reply!
 
 --------------------------------------------------
 🎯 CORE BEHAVIOR & CONVERSATIONAL FLOW RULES:
@@ -942,21 +905,20 @@ INSTRUCTION FOR AI: Inform them that our team will send the detailed PDF brochur
 
     const salesPhone = await getSalesContactPhone(tenantId);
     const formattedSalesPhone = formatDisplayPhone(salesPhone);
-    const displayLeadPhone = (currentLead.phone || phone || '').replace(/\D/g, '').slice(-10);
     const isDirectNumberQuery = isContactNumberRequest(text);
 
     let callbackReply = '';
     if (isDirectNumberQuery) {
       if (lang === 'english') {
-        callbackReply = `Certainly! You can connect with our Sales & Property Advisory Team directly at *${formattedSalesPhone}* (or continue chatting right here on this WhatsApp number).
+        callbackReply = `Certainly! You can connect with our Advisory Team directly at *${formattedSalesPhone}* (or continue chatting right here on this WhatsApp number).
 
 Our Senior Advisor at *${agencyName}* is also available to assist you with complete details, brochures, and private site visits. Feel free to ask any questions! 🏡`;
       } else if (lang === 'hindi') {
-        callbackReply = `जी बिल्कुल! आप हमारी सेल्स और प्रॉपर्टी एडवाइजरी टीम से सीधे *${formattedSalesPhone}* पर संपर्क कर सकते हैं (या इसी व्हाट्सएप नंबर पर चैट जारी रख सकते हैं)।
+        callbackReply = `जी बिल्कुल! आप हमारी एडवाइजरी टीम से सीधे *${formattedSalesPhone}* पर संपर्क कर सकते हैं (या इसी व्हाट्सएप नंबर पर चैट जारी रख सकते हैं)।
 
 *${agencyName}* के हमारे सीनियर एडवाइजर प्रोजेक्ट डिटेल्स और साइट विजिट के लिए भी उपलब्ध हैं। आप बेझिझक कोई भी सवाल पूछ सकते हैं! 🏡`;
       } else {
-        callbackReply = `Ji bilkul! Aap hamari Sales & Advisory Team se directly *${formattedSalesPhone}* par call ya WhatsApp par connect kar sakte hain (ya isi chat par baat continue kar sakte hain).
+        callbackReply = `Ji bilkul! Aap hamari Advisory Team se directly *${formattedSalesPhone}* par call ya WhatsApp par connect kar sakte hain (ya isi chat par baat continue kar sakte hain).
 
 *${agencyName}* ke hamare Senior Property Advisor complete project details, brochures aur site visit ke liye available hain. Aap pricing ya layout ko lekar koi bhi sawaal yahan puch sakte hain! 🏡`;
       }
@@ -964,21 +926,21 @@ Our Senior Advisor at *${agencyName}* is also available to assist you with compl
       if (lang === 'english') {
         callbackReply = `Certainly! I have registered your callback request with our Senior Property Advisor at *${agencyName}*.
 
-📞 Our advisor will call you shortly on your registered number${displayLeadPhone ? ` (${displayLeadPhone})` : ''}.
+📞 Our advisory team will contact you shortly on your contact number.
 
-You can also reach our Sales Team directly at *${formattedSalesPhone}* (or message us here anytime). In the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
+You can also reach our Advisory Team directly at *${formattedSalesPhone}* (or message us here anytime). In the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
       } else if (lang === 'hindi') {
-        callbackReply = `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *${agencyName}* के सीनियर एडवाइजर को भेज दिया है।
+        callbackReply = `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *${agencyName}* की एडवाइजरी टीम को भेज दिया है।
 
-📞 हमारे एडवाइजर जल्द ही आपके नंबर${displayLeadPhone ? ` (${displayLeadPhone})` : ''} पर कॉल करेंगे।
+📞 हमारी एडवाइजरी टीम जल्द ही आपसे आपके कॉन्टैक्ट नंबर पर संपर्क करेगी।
 
-आप सीधे हमारी सेल्स टीम से *${formattedSalesPhone}* पर भी संपर्क कर सकते हैं। इस दौरान यदि आपका कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
+आप सीधे हमारी एडवाइजरी टीम से *${formattedSalesPhone}* पर भी संपर्क कर सकते हैं। इस दौरान यदि आपका कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
       } else {
-        callbackReply = `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*${agencyName}*) ko forward kar diya hai.
+        callbackReply = `Ji bilkul! Maine aapka callback request hamari Advisory Team (*${agencyName}*) ko forward kar diya hai.
 
-📞 Hamare advisor jald hi aapse aapke number${displayLeadPhone ? ` (${displayLeadPhone})` : ''} par call par connect karenge.
+📞 Hamari advisory team jald hi aapse aapke contact number par connect karegi.
 
-Aap hamari Sales Team se directly *${formattedSalesPhone}* par bhi connect kar sakte hain. Is dauran agar aapka pricing ya flat layouts ko lekar koi bhi sawaal ho, toh aap freely puch sakte hain! 🏡`;
+Aap hamari Advisory Team se directly *${formattedSalesPhone}* par bhi connect kar sakte hain. Is dauran agar aapka pricing ya flat layouts ko lekar koi bhi sawaal ho, toh aap freely puch sakte hain! 🏡`;
       }
     }
 

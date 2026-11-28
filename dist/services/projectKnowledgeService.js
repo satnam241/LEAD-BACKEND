@@ -585,13 +585,14 @@ function buildIntelligentRealEstateResponse(project, userMessage, lang, activePr
     const rawLower = (userMessage || '').toLowerCase().trim();
     // 0. Handoff / Callback request fallback
     if (/(call\s*me|callback|call\s*back|call\s*karo|phone\s*karo|call\s*kijiye|call\s*chahiye|call\s*chaiye|contact\s*me|agent|human|representative)/i.test(rawLower)) {
+        const advisoryPhone = (process.env.SUPPORT_PHONE || '+91 98558 69999').trim();
         if (lang === 'english') {
-            return `Certainly! I have forwarded your callback request to our Senior Property Advisor at *${agencyName}*.\n\n📞 Our advisor will call you shortly on your registered number.\n\nIn the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
+            return `Certainly! I have forwarded your callback request to our Senior Property Advisor at *${agencyName}*.\n\n📞 Our advisory team will contact you shortly on your contact number.\n\nYou can also reach our Advisory Team directly at *${advisoryPhone}* (or message us here anytime). In the meantime, feel free to ask if you have any questions regarding pricing, location, or available layouts! 🏡`;
         }
         if (lang === 'hindi') {
-            return `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *भोले बाबा इन्वेस्टमेंट्स* के सीनियर एडवाइजर को भेज दिया है।\n\n📞 हमारे एडवाइजर जल्द ही आपको कॉल करेंगे।\n\nइस दौरान यदि आपका प्रोजेक्ट, कीमत या लोकेशन से संबंधित कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
+            return `जी बिल्कुल! मैंने आपका कॉलबैक अनुरोध *${agencyName}* की एडवाइजरी टीम को भेज दिया है।\n\n📞 हमारी एडवाइजरी टीम जल्द ही आपसे आपके कॉन्टैक्ट नंबर पर संपर्क करेगी।\n\nआप सीधे हमारी एडवाइजरी टीम से *${advisoryPhone}* पर भी संपर्क कर सकते हैं। इस दौरान यदि आपका प्रोजेक्ट, कीमत या लोकेशन से संबंधित कोई भी सवाल हो, तो आप यहाँ पूछ सकते हैं! 🏡`;
         }
-        return `Ji bilkul! Maine aapka callback request hamare Senior Property Advisor (*${agencyName}*) ko forward kar diya hai.\n\n📞 Hamare advisor jald hi aapse call par connect karenge.\n\nIs dauran agar aapka pricing, location ya flat layouts ko lekar koi sawaal ho, toh aap yahan puch sakte hain! 🏡`;
+        return `Ji bilkul! Maine aapka callback request hamari Advisory Team (*${agencyName}*) ko forward kar diya hai.\n\n📞 Hamari advisory team jald hi aapse aapke contact number par connect karegi.\n\nAap hamari Advisory Team se directly *${advisoryPhone}* par bhi connect kar sakte hain. Is dauran agar aapka pricing, location ya flat layouts ko lekar koi sawaal ho, toh aap yahan puch sakte hain! 🏡`;
     }
     // 1. Direct verified answer from FAQs or attributes
     const direct = findDirectFaqAnswer(project, userMessage);

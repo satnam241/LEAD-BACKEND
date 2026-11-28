@@ -340,13 +340,13 @@ async function handleUserInteraction(phone, text, lead) {
                 let reassureMsg = '';
                 if (isNumReq) {
                     reassureMsg = (lang === 'english')
-                        ? `You can reach our Sales & Property Advisory Team directly at *${formattedSalesPhone}* (or message us right here). Our Senior Advisor at *${agencyName}* is also ready to assist you! 📞`
-                        : `Aap hamari Sales & Advisory Team se directly *${formattedSalesPhone}* par call ya WhatsApp kar sakte hain. *${agencyName}* ke senior advisor bhi aapse jald connect karenge! 📞`;
+                        ? `You can reach our Advisory Team directly at *${formattedSalesPhone}* (or message us right here). Our Senior Advisor at *${agencyName}* is also ready to assist you! 📞`
+                        : `Aap hamari Advisory Team se directly *${formattedSalesPhone}* par call ya WhatsApp kar sakte hain. *${agencyName}* ke senior advisor bhi aapse jald connect karenge! 📞`;
                 }
                 else {
                     reassureMsg = (lang === 'english')
-                        ? `Certainly! Your callback request is already registered with our Senior Property Advisor at *${agencyName}*. You can also reach our Sales Team directly at *${formattedSalesPhone}* anytime. An advisor will connect with you shortly! 📞`
-                        : `Ji, aapka callback request already hamari senior advisory team (*${agencyName}*) ko assign kiya hua hai. Aap hamari Sales Team ko direct *${formattedSalesPhone}* par bhi call kar sakte hain. Hamare advisor jald hi connect karenge! 📞`;
+                        ? `Certainly! Your callback request is already registered with our Senior Property Advisor at *${agencyName}*. Our advisory team will contact you shortly on your contact number. You can also reach our Advisory Team directly at *${formattedSalesPhone}* anytime! 📞`
+                        : `Ji, aapka callback request already hamari advisory team (*${agencyName}*) ko assign kiya hua hai. Hamari advisory team jald hi aapse aapke contact number par connect karegi. Aap hamari Advisory Team ko direct *${formattedSalesPhone}* par bhi call kar sakte hain! 📞`;
                 }
                 await (0, baileysService_1.sendText)(phone, reassureMsg, lead?.tenantId?.toString());
                 await conversationMessage_model_1.default.create([
